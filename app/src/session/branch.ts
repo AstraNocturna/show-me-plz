@@ -9,7 +9,7 @@ export function activeBranch(entries: SessionEntry[], leafOverride: string | nul
   const byId = new Map<string, SessionEntry>();
   let last: SessionEntry | undefined;
   for (const e of entries) {
-    if (e.id) {
+    if (e.id && e.type !== "session") {
       byId.set(e.id, e);
       last = e;
     }
