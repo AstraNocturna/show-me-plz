@@ -5,10 +5,10 @@ function label(turn: Turn): string {
   return line.trim() || (turn.user ? "（图片）" : "（会话开始）");
 }
 
-export function Outline({ turns, activeId, onJump }: { turns: Turn[]; activeId?: string; onJump: (id: string) => void }) {
+export function Outline(props: { turns: Turn[]; activeId?: string; marked: Set<string>; onJump: (id: string) => void }) {
+  const { turns, activeId, marked, onJump } = props;
   return (
     <nav className="outline">
-      <div className="outline-title">提问 · {turns.filter((t) => t.user).length}</div>
       {turns.map((t, i) => (
         <button
           key={t.id}
@@ -18,6 +18,7 @@ export function Outline({ turns, activeId, onJump }: { turns: Turn[]; activeId?:
         >
           <span className="outline-index">{i + 1}</span>
           <span className="outline-label">{label(t)}</span>
+          {marked.has(t.id) && <span className="outline-star">★</span>}
         </button>
       ))}
     </nav>

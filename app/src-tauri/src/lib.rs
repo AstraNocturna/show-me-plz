@@ -1,3 +1,4 @@
+mod marks;
 mod session;
 
 use std::io::BufRead;
@@ -123,7 +124,7 @@ pub fn run() {
             spawn_stdin_reader(app.handle().clone(), state.clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_snapshot])
+        .invoke_handler(tauri::generate_handler![get_snapshot, marks::load_marks, marks::save_marks])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

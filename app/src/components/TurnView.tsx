@@ -1,5 +1,8 @@
 import { memo, useState } from "react";
 import { copyText } from "../actions";
+import { MarkButton } from "../marks/marks";
+import { useRevealOpen } from "../reveal";
+import { partKey, stepKey, userKey } from "../session/units";
 import { toolIcon, toolSummary } from "../session/toolSummary";
 import type { ImageContent } from "../session/types";
 import type { Part, Step, ToolCallView, Turn } from "../session/viewModel";
@@ -51,13 +54,14 @@ function ToolArgs({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function ToolStepView({ call, cwd }: { call: ToolCallView; cwd?: string }) {
+function ToolStepView({ call, cwd, unit }: { call: ToolCallView; cwd?: string; unit: string }) {
   const [open, setOpen] = useState(false);
+  useRevealOpen(unit, () => setOpen(true));
   const status = !call.result ? "running" : call.result.isError ? "error" : "ok";
   const text = call.result?.text ?? "";
   const shown = text.length > MAX_RESULT_CHARS ? text.slice(0, MAX_RESULT_CHARS) : text;
   return (
-    <div className={`step tool ${status}`}>
+    <div className={`step tool ${status}`} data-unit={unit}>
       <button className="step-row" onClick={() => setOpen(!open)}>
         <span className="caret">{open ? "▾" : "▸"}</span>
         <span>{toolIcon(call.name)}</span>
@@ -87,24 +91,30 @@ function ToolStepView({ call, cwd }: { call: ToolCallView; cwd?: string }) {
   );
 }
 
-function StepView({ step, cwd }: { step: Step; cwd?: string }) {
-  const [open, setOpen] = useState(false);
-  if (step.kind === "tool") return <ToolStepView call={step.call} cwd={cwd} />;
+function StepView({ step, cwd, unit }: { step: Step; cwd?: string; unit: string }) {
+  if (step.kind === "tool") return <ToolStepView call={step.call} cwd={cwd} unit={unit} />;
   if (step.kind === "meta") return <div className="step meta muted">{step.text}</div>;
+  return <ThinkingStepView text={step.text} cwd={cwd} unit={unit} />;
+}
+
+function ThinkingStepView({ text, cwd, unit }: { text: string; cwd?: string; unit: string }) {
+  const [open, setOpen] = useState(false);
+  useRevealOpen(unit, () => setOpen(true));
   return (
-    <div className="step thinking">
+    <div className="step thinking" data-unit={unit}>
       <button className="step-row" onClick={() => setOpen(!open)}>
         <span className="caret">{open ? "▾" : "▸"}</span>
         <span>💭</span>
-        <span className="tool-summary">{step.text.split("\n", 1)[0].slice(0, 120)}</span>
+        <span className="tool-summary">{text.split("\n", 1)[0].slice(0, 120)}</span>
       </button>
-      {open && <div className="step-detail"><Markdown source={step.text} cwd={cwd} /></div>}
+      {open && <div className="step-detail"><Markdown source={text} cwd={cwd} /></div>}
     </div>
   );
 }
 
-function ProcessView({ steps, mode, cwd }: { steps: Step[]; mode: Mode; cwd?: string }) {
+function ProcessView({ steps, mode, cwd, unit }: { steps: Step[]; mode: Mode; cwd?: string; unit: string }) {
   const [override, setOverride] = useState<boolean | null>(null);
+  useRevealOpen(unit, () => setOverride(true));
   const open = override ?? mode === "full";
   const calls = steps.flatMap((s) => (s.kind === "tool" ? [s.call] : []));
   const thinking = steps.filter((s) => s.kind === "thinking").length;
@@ -112,7 +122,7 @@ function ProcessView({ steps, mode, cwd }: { steps: Step[]; mode: Mode; cwd?: st
   const preview = calls.slice(0, 4).map((c) => `${toolIcon(c.name)} ${toolSummary(c, cwd) || c.name}`);
 
   return (
-    <div className={`process ${open ? "open" : ""}`}>
+    <div className={`process ${open ? "open" : ""}`} data-unit={unit}>
       <button className="process-head" onClick={() => setOverride(!open)}>
         <span className="caret">{open ? "▾" : "▸"}</span>
         <span className="process-counts">
@@ -126,7 +136,7 @@ function ProcessView({ steps, mode, cwd }: { steps: Step[]; mode: Mode; cwd?: st
       {open && (
         <div className="steps">
           {steps.map((s, i) => (
-            <StepView key={i} step={s} cwd={cwd} />
+            <StepView key={i} step={s} cwd={cwd} unit={stepKey(unit, i)} />
           ))}
         </div>
       )}
@@ -134,10 +144,11 @@ function ProcessView({ steps, mode, cwd }: { steps: Step[]; mode: Mode; cwd?: st
   );
 }
 
-function NoticeView({ title, text, cwd }: { title: string; text: string; cwd?: string }) {
+function NoticeView({ title, text, cwd, unit }: { title: string; text: string; cwd?: string; unit: string }) {
   const [open, setOpen] = useState(false);
+  useRevealOpen(unit, () => setOpen(true));
   return (
-    <div className="notice">
+    <div className="notice" data-unit={unit}>
       <button className="process-head" onClick={() => setOpen(!open)}>
         <span className="caret">{open ? "▾" : "▸"}</span>
         <span>{title}</span>
@@ -147,23 +158,27 @@ function NoticeView({ title, text, cwd }: { title: string; text: string; cwd?: s
   );
 }
 
-function PartView({ part, mode, cwd }: { part: Part; mode: Mode; cwd?: string }) {
+function PartView(props: { part: Part; mode: Mode; cwd?: string; turnId: string; unit: string }) {
+  const { part, mode, cwd, turnId, unit } = props;
   switch (part.kind) {
     case "text":
       return (
-        <div className="answer">
-          <button className="copy-btn float" onClick={() => void copyText(part.text)} title="复制原始 Markdown">
-            复制
-          </button>
+        <div className="answer" data-unit={unit}>
+          <div className="float-actions">
+            <MarkButton unitKey={unit} turnId={turnId} preview={part.text} />
+            <button className="copy-btn" onClick={() => void copyText(part.text)} title="复制原始 Markdown">
+              复制
+            </button>
+          </div>
           <Markdown source={part.text} cwd={cwd} />
         </div>
       );
     case "process":
-      return <ProcessView steps={part.steps} mode={mode} cwd={cwd} />;
+      return <ProcessView steps={part.steps} mode={mode} cwd={cwd} unit={unit} />;
     case "error":
-      return <div className="error-box">⚠ {part.text}</div>;
+      return <div className="error-box" data-unit={unit}>⚠ {part.text}</div>;
     case "notice":
-      return <NoticeView title={part.title} text={part.text} cwd={cwd} />;
+      return <NoticeView title={part.title} text={part.text} cwd={cwd} unit={unit} />;
   }
 }
 
@@ -171,8 +186,9 @@ export const TurnView = memo(function TurnView({ turn, mode, cwd }: { turn: Turn
   return (
     <section className="turn" data-turn-id={turn.id}>
       {turn.user && (
-        <div className="user">
+        <div className="user" data-unit={userKey(turn.id)}>
           <header className="card-head">
+            <MarkButton unitKey={userKey(turn.id)} turnId={turn.id} preview={turn.user.text} />
             <span className="who">你</span>
             <span className="muted">{formatTime(turn.user.timestamp)}</span>
             <span className="spacer" />
@@ -185,7 +201,7 @@ export const TurnView = memo(function TurnView({ turn, mode, cwd }: { turn: Turn
       )}
       <div className="agent">
         {turn.parts.map((p, i) => (
-          <PartView key={i} part={p} mode={mode} cwd={cwd} />
+          <PartView key={i} part={p} mode={mode} cwd={cwd} turnId={turn.id} unit={partKey(turn.id, i)} />
         ))}
       </div>
     </section>
