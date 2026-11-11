@@ -27,6 +27,8 @@ export function resolveImageSrc(src: string, cwd?: string): string {
 function create(breaks: boolean) {
   // html: false — agent output may contain tags that must show literally, never execute.
   const md = new MarkdownIt({ html: false, linkify: true, breaks });
+  // Only links with an explicit scheme: fuzzy matching turns `README.md` into http://readme.md.
+  md.linkify.set({ fuzzyLink: false });
   const esc = md.utils.escapeHtml;
 
   md.renderer.rules.fence = (tokens, idx) => {

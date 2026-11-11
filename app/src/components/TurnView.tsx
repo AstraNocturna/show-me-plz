@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { copyText } from "../actions";
+import { resolvePath } from "../files/fileRef";
 import { MarkButton } from "../marks/marks";
 import { useRevealOpen } from "../reveal";
 import { partKey, stepKey, userKey } from "../session/units";
@@ -54,21 +55,38 @@ function ToolArgs({ args }: { args: Record<string, unknown> }) {
   );
 }
 
+/** The file a tool call worked on (read/edit/write style `path` args), with read's offset as the line. */
+function toolFile(call: ToolCallView, cwd?: string): { path: string; line?: number } | null {
+  const p = call.args.path ?? call.args.file_path;
+  const abs = typeof p === "string" ? resolvePath(p, cwd) : null;
+  if (!abs) return null;
+  const offset = call.args.offset;
+  return { path: abs, line: typeof offset === "number" && offset > 0 ? offset : undefined };
+}
+
 function ToolStepView({ call, cwd, unit }: { call: ToolCallView; cwd?: string; unit: string }) {
   const [open, setOpen] = useState(false);
   useRevealOpen(unit, () => setOpen(true));
   const status = !call.result ? "running" : call.result.isError ? "error" : "ok";
   const text = call.result?.text ?? "";
   const shown = text.length > MAX_RESULT_CHARS ? text.slice(0, MAX_RESULT_CHARS) : text;
+  const file = toolFile(call, cwd);
   return (
     <div className={`step tool ${status}`} data-unit={unit}>
-      <button className="step-row" onClick={() => setOpen(!open)}>
-        <span className="caret">{open ? "▾" : "▸"}</span>
-        <span>{toolIcon(call.name)}</span>
-        <span className="tool-name">{call.name}</span>
-        <span className="tool-summary">{toolSummary(call, cwd)}</span>
-        <span className="tool-status">{status === "running" ? "…" : status === "error" ? "✗" : ""}</span>
-      </button>
+      <div className="step-head">
+        <button className="step-row" onClick={() => setOpen(!open)}>
+          <span className="caret">{open ? "▾" : "▸"}</span>
+          <span>{toolIcon(call.name)}</span>
+          <span className="tool-name">{call.name}</span>
+          <span className="tool-summary">{toolSummary(call, cwd)}</span>
+          <span className="tool-status">{status === "running" ? "…" : status === "error" ? "✗" : ""}</span>
+        </button>
+        {file && (
+          <button className="file-open" data-file-path={file.path} data-file-line={file.line} title={`预览 ${file.path}`}>
+            ↗
+          </button>
+        )}
+      </div>
       {open && (
         <div className="step-detail">
           <ToolArgs args={call.args} />

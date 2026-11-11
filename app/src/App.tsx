@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { handleContentClick, TOAST_EVENT } from "./actions";
+import { FilePreview } from "./components/FilePreview";
 import { Markers, type MarkerSpec } from "./components/Markers";
 import { MarksPanel, sortMarks } from "./components/MarksPanel";
 import { Outline } from "./components/Outline";
 import { SearchBar } from "./components/SearchBar";
 import { TurnView, type Mode } from "./components/TurnView";
 import { MARK_COLORS, MarksContext, useMarks, type Mark } from "./marks/marks";
+import type { FileRef } from "./files/fileRef";
 import { RevealContext, type Reveal } from "./reveal";
 import { findUnitEl } from "./search/dom";
 import { useSearch } from "./search/useSearch";
@@ -13,6 +15,7 @@ import { activeBranch } from "./session/branch";
 import { userKey } from "./session/units";
 import { useSession } from "./session/useSession";
 import { buildTurns } from "./session/viewModel";
+import { useSplit } from "./useSplit";
 import "./styles.css";
 
 const MODE_KEY = "smp.mode";
@@ -28,7 +31,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ["] / [", "下一个 / 上一个书签"],
   ["'", "打开书签面板"],
   ["v", "切换 对话 / 完整 模式"],
-  ["Esc", "关闭搜索、图片、帮助"],
+  ["Esc", "依次关闭图片、帮助、搜索、文件预览"],
   ["?", "显示/隐藏本帮助"],
 ];
 
@@ -48,7 +51,10 @@ export default function App() {
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const [searchFocus, setSearchFocus] = useState(0);
   const [hasNew, setHasNew] = useState(false);
+  const [preview, setPreview] = useState<FileRef | null>(null);
   const timeline = useRef<HTMLElement>(null);
+  const workspace = useRef<HTMLDivElement>(null);
+  const split = useSplit(workspace);
 
   const header = useMemo(() => session.entries.find((e) => e.type === "session"), [session.entries]);
   const cwd = typeof header?.cwd === "string" ? header.cwd : undefined;
@@ -169,8 +175,8 @@ export default function App() {
   );
 
   // ---- Keyboard ----
-  const stateRef = useRef({ turns, activeId, sortedMarks, turnOrder, search, lightbox, help });
-  stateRef.current = { turns, activeId, sortedMarks, turnOrder, search, lightbox, help };
+  const stateRef = useRef({ turns, activeId, sortedMarks, turnOrder, search, lightbox, help, preview });
+  stateRef.current = { turns, activeId, sortedMarks, turnOrder, search, lightbox, help, preview };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = stateRef.current;
@@ -190,6 +196,7 @@ export default function App() {
         if (s.lightbox) setLightbox(null);
         else if (s.help) setHelp(false);
         else if (s.search.open) s.search.setOpen(false);
+        else if (s.preview) setPreview(null);
         return;
       }
       if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -302,22 +309,38 @@ export default function App() {
                 <MarksPanel api={marks} sorted={sortedMarks} turnOrder={turnOrder} onJump={jumpToMark} />
               )}
             </aside>
-            <div className="main">
-              {search.open && <SearchBar s={search} focusNonce={searchFocus} />}
-              <div className="timeline-wrap">
-                <main className="timeline" ref={timeline} onScroll={onScroll} onClick={(e) => handleContentClick(e, setLightbox)}>
-                  <div className="timeline-inner">
-                    {turns.length === 0 && <div className="empty">暂无对话</div>}
-                    {turns.map((t) => (
-                      <TurnView key={`${mode}:${t.id}`} turn={t} mode={mode} cwd={cwd} />
-                    ))}
-                  </div>
-                </main>
-                <Markers specs={markerSpecs} timeline={timeline} onJump={jumpToMark} />
-                {hasNew && (
-                  <button className="new-pill" onClick={scrollToBottom}>↓ 有新消息</button>
-                )}
+            <div ref={workspace} className={`workspace ${split.dir}`}>
+              <div className="main" style={preview ? { flex: `0 0 ${split.ratio * 100}%` } : undefined}>
+                {search.open && <SearchBar s={search} focusNonce={searchFocus} />}
+                <div className="timeline-wrap">
+                  <main className="timeline" ref={timeline} onScroll={onScroll} onClick={(e) => handleContentClick(e, setLightbox, setPreview)}>
+                    <div className="timeline-inner">
+                      {turns.length === 0 && <div className="empty">暂无对话</div>}
+                      {turns.map((t) => (
+                        <TurnView key={`${mode}:${t.id}`} turn={t} mode={mode} cwd={cwd} />
+                      ))}
+                    </div>
+                  </main>
+                  <Markers specs={markerSpecs} timeline={timeline} onJump={jumpToMark} />
+                  {hasNew && (
+                    <button className="new-pill" onClick={scrollToBottom}>↓ 有新消息</button>
+                  )}
+                </div>
               </div>
+              {preview && (
+                <>
+                  <div className="divider" onPointerDown={split.startDrag} title="拖动调整分屏比例" />
+                  <FilePreview
+                    target={preview}
+                    cwd={cwd}
+                    dir={split.dir}
+                    onToggleDir={split.toggleDir}
+                    onClose={() => setPreview(null)}
+                    onFile={setPreview}
+                    onImage={setLightbox}
+                  />
+                </>
+              )}
             </div>
           </div>
           {help && (

@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef } from "react";
+import { linkifyFileRefs } from "../files/links";
 import { highlight } from "../render/highlight";
 import { renderMarkdown } from "../render/markdown";
 
@@ -17,6 +18,7 @@ export const Markdown = memo(function Markdown({ source, cwd, user }: Props) {
     const root = ref.current;
     if (!root) return;
     let cancelled = false;
+    void linkifyFileRefs(root, cwd);
     root.querySelectorAll<HTMLElement>("code[data-lang]").forEach((code) => {
       const lang = code.dataset.lang;
       const pre = code.parentElement;
@@ -29,7 +31,7 @@ export const Markdown = memo(function Markdown({ source, cwd, user }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [html]);
+  }, [html, cwd]);
 
-  return <div ref={ref} className="md" dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div ref={ref} className="md" data-cwd={cwd} dangerouslySetInnerHTML={{ __html: html }} />;
 });

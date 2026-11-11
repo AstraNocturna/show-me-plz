@@ -1,3 +1,4 @@
+mod files;
 mod marks;
 mod session;
 
@@ -124,7 +125,13 @@ pub fn run() {
             spawn_stdin_reader(app.handle().clone(), state.clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_snapshot, marks::load_marks, marks::save_marks])
+        .invoke_handler(tauri::generate_handler![
+            get_snapshot,
+            marks::load_marks,
+            marks::save_marks,
+            files::read_file,
+            files::check_paths
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

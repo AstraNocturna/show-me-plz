@@ -1,4 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import type { FileRef } from "./files/fileRef";
+import { localLinkRef, readRefData } from "./files/links";
 
 export const TOAST_EVENT = "smp-toast";
 
@@ -17,10 +19,18 @@ export async function copyText(text: string): Promise<void> {
 
 /**
  * Delegated click handling for rendered content: links must never navigate the app window,
- * code-block copy buttons, and image zoom.
+ * code-block copy buttons, image zoom, and local file references (opened in the preview).
  */
-export function handleContentClick(e: React.MouseEvent, onImage: (src: string) => void): void {
+export function handleContentClick(e: React.MouseEvent, onImage: (src: string) => void, onFile: (ref: FileRef) => void): void {
   const el = e.target as HTMLElement;
+
+  const fileEl = el.closest<HTMLElement>("[data-file-path]");
+  if (fileEl) {
+    e.preventDefault();
+    e.stopPropagation();
+    onFile(readRefData(fileEl));
+    return;
+  }
 
   const copyBtn = el.closest<HTMLElement>("[data-copy-code]");
   if (copyBtn) {
@@ -34,6 +44,10 @@ export function handleContentClick(e: React.MouseEvent, onImage: (src: string) =
     e.preventDefault();
     const href = link.getAttribute("href") ?? "";
     if (/^(https?:|mailto:)/i.test(href)) void openUrl(href).catch((err) => toast(`打开失败: ${String(err)}`));
+    else {
+      const ref = localLinkRef(href, link.closest<HTMLElement>("[data-cwd]")?.dataset.cwd);
+      if (ref) onFile(ref);
+    }
     return;
   }
 
