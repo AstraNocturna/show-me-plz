@@ -6,6 +6,7 @@ import { MarksPanel, sortMarks } from "./components/MarksPanel";
 import { Outline } from "./components/Outline";
 import { SearchBar } from "./components/SearchBar";
 import { TurnView } from "./components/TurnView";
+import { ViewMenu } from "./components/ViewMenu";
 import { MARK_COLORS, MarksContext, useMarks, type Mark } from "./marks/marks";
 import type { FileRef } from "./files/fileRef";
 import { RevealContext, type Reveal } from "./reveal";
@@ -13,24 +14,27 @@ import { findUnitEl } from "./search/dom";
 import { useSearch } from "./search/useSearch";
 import { activeBranch } from "./session/branch";
 import { userKey } from "./session/units";
-import type { Mode, ViewOpts } from "./session/view";
+import { DEFAULT_VIEW, type ViewOpts } from "./session/view";
+import { isWorking, useActivity, type Activity } from "./session/useActivity";
 import { useSession } from "./session/useSession";
 import { buildTurns } from "./session/viewModel";
 import { useSplit } from "./useSplit";
 import { useWindowPrefs, type ThemePref } from "./useWindowPrefs";
 import "./styles.css";
 
-const MODE_KEY = "smp.mode";
-const TOOLS_KEY = "smp.tools";
-const MODES: Array<[Mode, string, string]> = [
-  ["final", "结论", "只看每轮的最终回答 (v)"],
-  ["chat", "对话", "突出提问与回答，过程折叠 (v)"],
-  ["full", "完整", "展开思考与工具调用 (v)"],
-];
+const VIEW_KEY = "smp.view";
 
-function loadMode(): Mode {
-  const m = localStorage.getItem(MODE_KEY);
-  return m === "final" || m === "full" ? m : "chat";
+function loadView(): ViewOpts {
+  try {
+    return { ...DEFAULT_VIEW, ...(JSON.parse(localStorage.getItem(VIEW_KEY) ?? "{}") as Partial<ViewOpts>) };
+  } catch {
+    return DEFAULT_VIEW;
+  }
+}
+
+function activityLabel(a: Activity): string {
+  if (a.state === "tool") return a.detail ? `正在调用 ${a.detail}` : "正在准备工具调用";
+  return a.state === "writing" ? "AI 正在回复" : "AI 正在思考";
 }
 const BOTTOM_SLACK = 60;
 const INPUT_GRACE_MS = 800;
@@ -43,8 +47,6 @@ const SHORTCUTS: Array<[string, string]> = [
   ["m", "给当前提问加/取消书签"],
   ["] / [", "下一个 / 上一个书签"],
   ["'", "打开书签面板"],
-  ["v", "切换 结论 / 对话 / 完整 模式"],
-  ["t", "显示/隐藏工具调用"],
   ["Esc", "依次关闭图片、帮助、搜索、文件预览"],
   ["Ctrl+滚轮", "缩放（Ctrl+= / Ctrl+- 同样可用，Ctrl+0 还原）"],
   ["?", "显示/隐藏本帮助"],
@@ -63,9 +65,8 @@ function isTyping(e: KeyboardEvent): boolean {
 
 export default function App() {
   const session = useSession();
-  const [mode, setMode] = useState<Mode>(loadMode);
-  const [tools, setTools] = useState(() => localStorage.getItem(TOOLS_KEY) !== "0");
-  const view = useMemo<ViewOpts>(() => ({ mode, tools }), [mode, tools]);
+  const activity = useActivity();
+  const [view, setView] = useState<ViewOpts>(loadView);
   const [tab, setTab] = useState<"outline" | "marks">("outline");
   const [activeId, setActiveId] = useState<string>();
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -95,8 +96,7 @@ export default function App() {
   const markedTurns = useMemo(() => new Set(marks.marks.map((m) => m.turnId)), [marks.marks]);
   const search = useSearch({ turns, cwd, view, timeline, activeTurnId: activeId, reveal: revealKey });
 
-  useEffect(() => localStorage.setItem(MODE_KEY, mode), [mode]);
-  useEffect(() => localStorage.setItem(TOOLS_KEY, tools ? "1" : "0"), [tools]);
+  useEffect(() => localStorage.setItem(VIEW_KEY, JSON.stringify(view)), [view]);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -206,6 +206,34 @@ export default function App() {
   // ---- Keyboard ----
   const stateRef = useRef({ turns, activeId, sortedMarks, turnOrder, search, lightbox, help, preview });
   stateRef.current = { turns, activeId, sortedMarks, turnOrder, search, lightbox, help, preview };
+
+  // Navigation shared by the keyboard and the floating buttons; reads current state through stateRef.
+  const nav = useMemo(() => {
+    const s = () => stateRef.current;
+    const idx = () => s().turns.findIndex((t) => t.id === s().activeId);
+    const markPos = (m: Mark) => s().turnOrder.get(m.turnId) ?? -1;
+    return {
+      turn(delta: 1 | -1) {
+        const t = s().turns[Math.min(Math.max(idx() + delta, 0), s().turns.length - 1)];
+        if (t) jumpToTurn(t.id);
+      },
+      top() {
+        if (timeline.current) timeline.current.scrollTop = 0;
+      },
+      bottom: scrollToBottom,
+      toggleMark() {
+        const t = s().turns[idx()];
+        if (t?.user) marks.toggle({ key: userKey(t.id), turnId: t.id, preview: t.user.text.slice(0, 200) });
+      },
+      mark(dir: 1 | -1) {
+        const i = idx();
+        const list = dir > 0 ? s().sortedMarks : [...s().sortedMarks].reverse();
+        const m = list.find((x) => (dir > 0 ? markPos(x) > i : markPos(x) >= 0 && markPos(x) < i));
+        if (m) jumpToMark(m);
+      },
+    };
+  }, [jumpToTurn, jumpToMark, scrollToBottom, marks.toggle]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = stateRef.current;
@@ -230,45 +258,30 @@ export default function App() {
       }
       if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
 
-      const idx = s.turns.findIndex((t) => t.id === s.activeId);
-      const go = (i: number) => s.turns[i] && jumpToTurn(s.turns[i].id);
-      const markPos = (m: Mark) => s.turnOrder.get(m.turnId) ?? -1;
       switch (e.key) {
         case "j":
-          go(Math.min(idx + 1, s.turns.length - 1));
+          nav.turn(1);
           break;
         case "k":
-          go(Math.max(idx - 1, 0));
+          nav.turn(-1);
           break;
         case "g":
-          if (timeline.current) timeline.current.scrollTop = 0;
+          nav.top();
           break;
         case "G":
-          scrollToBottom();
+          nav.bottom();
           break;
-        case "m": {
-          const t = s.turns[idx];
-          if (t?.user) marks.toggle({ key: userKey(t.id), turnId: t.id, preview: t.user.text.slice(0, 200) });
+        case "m":
+          nav.toggleMark();
           break;
-        }
-        case "]": {
-          const m = s.sortedMarks.find((x) => markPos(x) > idx);
-          if (m) jumpToMark(m);
+        case "]":
+          nav.mark(1);
           break;
-        }
-        case "[": {
-          const m = [...s.sortedMarks].reverse().find((x) => markPos(x) >= 0 && markPos(x) < idx);
-          if (m) jumpToMark(m);
+        case "[":
+          nav.mark(-1);
           break;
-        }
         case "'":
           setTab("marks");
-          break;
-        case "v":
-          setMode((m) => MODES[(MODES.findIndex(([k]) => k === m) + 1) % MODES.length][0]);
-          break;
-        case "t":
-          setTools((v) => !v);
           break;
         case "?":
           setHelp((h) => !h);
@@ -280,7 +293,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [jumpToTurn, jumpToMark, scrollToBottom, marks.toggle]);
+  }, [nav]);
 
   // ---- Scrollbar markers ----
   const markerSpecs = useMemo<MarkerSpec[]>(() => {
@@ -314,29 +327,22 @@ export default function App() {
             >
               🔍
             </button>
-            <div className="segmented">
-              {MODES.map(([k, label, title]) => (
-                <button key={k} className={mode === k ? "on" : ""} onClick={() => setMode(k)} title={title}>
-                  {label}
-                </button>
-              ))}
+            <ViewMenu view={view} onChange={setView} />
+            <div className="zoom">
+              <button onClick={() => prefs.stepZoom(-1)} title="缩小（Ctrl+滚轮同样可用）">−</button>
+              <button onClick={prefs.resetZoom} title="还原到 100%">{Math.round(prefs.zoom * 100)}%</button>
+              <button onClick={() => prefs.stepZoom(1)} title="放大（Ctrl+滚轮同样可用）">+</button>
             </div>
-            <button
-              className={`toggle ${tools && mode !== "final" ? "on" : ""}`}
-              disabled={mode === "final"}
-              title={mode === "final" ? "结论模式不显示工具调用" : tools ? "隐藏工具调用 (t)" : "显示工具调用 (t)"}
-              onClick={() => setTools((v) => !v)}
-            >
-              工具
-            </button>
             <button className="toggle" title={`${THEME_LABEL[prefs.theme][1]}（点击切换）`} onClick={prefs.cycleTheme}>
               {THEME_LABEL[prefs.theme][0]}
             </button>
             <button className={`toggle ${prefs.onTop ? "on" : ""}`} title={prefs.onTop ? "取消置顶" : "窗口置顶"} onClick={prefs.toggleOnTop}>
               📌
             </button>
-            <button className="toggle" title="快捷键 (?)" onClick={() => setHelp(!help)}>⌨</button>
-            <span className="status">{session.hostConnected ? "● 同步中" : "○ pi 已退出"}</span>
+            <button className="toggle" title="快捷键（可选，所有功能都有按钮）" onClick={() => setHelp(!help)}>⌨</button>
+            <span className={`status ${isWorking(activity) ? "working" : ""}`}>
+              {!session.hostConnected ? "○ pi 已退出" : isWorking(activity) ? "● AI 工作中" : "● 同步中"}
+            </span>
           </header>
           <div className="body">
             <aside className="sidebar">
@@ -362,11 +368,29 @@ export default function App() {
                     <div className="timeline-inner">
                       {turns.length === 0 && <div className="empty">暂无对话</div>}
                       {turns.map((t) => (
-                        <TurnView key={`${mode}:${t.id}`} turn={t} view={view} cwd={cwd} />
+                        <TurnView key={`${view.expand}:${t.id}`} turn={t} view={view} cwd={cwd} />
                       ))}
+                      {isWorking(activity) && (
+                        <div className="activity" role="status">
+                          <span className="dots"><i /><i /><i /></span>
+                          <span className="activity-text">{activityLabel(activity)}</span>
+                        </div>
+                      )}
                     </div>
                   </main>
                   <Markers specs={markerSpecs} timeline={timeline} onJump={jumpToMark} />
+                  <div className="nav-rail">
+                    <button title="回到顶部" onClick={nav.top}>⤒</button>
+                    <button title="上一个提问" onClick={() => nav.turn(-1)}>↑</button>
+                    <button title="下一个提问" onClick={() => nav.turn(1)}>↓</button>
+                    <button title="跳到底部" onClick={nav.bottom}>⤓</button>
+                    {marks.marks.length > 0 && (
+                      <>
+                        <button className="mark-nav" title="上一个书签" onClick={() => nav.mark(-1)}>★↑</button>
+                        <button className="mark-nav" title="下一个书签" onClick={() => nav.mark(1)}>★↓</button>
+                      </>
+                    )}
+                  </div>
                   {hasNew && (
                     <button className="new-pill" onClick={scrollToBottom}>↓ 有新消息</button>
                   )}
@@ -391,7 +415,7 @@ export default function App() {
           {help && (
             <div className="help" onClick={() => setHelp(false)}>
               <div className="help-card" onClick={(e) => e.stopPropagation()}>
-                <div className="help-title">快捷键</div>
+                <div className="help-title">快捷键（可选，功能都有对应按钮）</div>
                 {SHORTCUTS.map(([k, d]) => (
                   <div key={k} className="help-row"><kbd>{k}</kbd><span>{d}</span></div>
                 ))}

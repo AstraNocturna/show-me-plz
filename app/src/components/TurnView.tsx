@@ -6,7 +6,7 @@ import { useRevealOpen } from "../reveal";
 import { partKey, stepKey, userKey } from "../session/units";
 import { shownArgs, toolIcon, toolSummary } from "../session/toolSummary";
 import type { ImageContent } from "../session/types";
-import { visibleParts, visibleSteps, type Indexed, type Mode, type ViewOpts } from "../session/view";
+import { visibleParts, visibleSteps, type Indexed, type ViewOpts } from "../session/view";
 import type { Part, Step, ToolCallView, Turn } from "../session/viewModel";
 import { Markdown } from "./Markdown";
 
@@ -150,10 +150,10 @@ function ThinkingStepView({ text, cwd, unit }: { text: string; cwd?: string; uni
   );
 }
 
-function ProcessView({ steps, mode, cwd, unit }: { steps: Indexed<Step>[]; mode: Mode; cwd?: string; unit: string }) {
+function ProcessView({ steps, expand, cwd, unit }: { steps: Indexed<Step>[]; expand: boolean; cwd?: string; unit: string }) {
   const [override, setOverride] = useState<boolean | null>(null);
   useRevealOpen(unit, () => setOverride(true));
-  const open = override ?? mode === "full";
+  const open = override ?? expand;
   const calls = steps.flatMap(({ item: s }) => (s.kind === "tool" ? [s.call] : []));
   const thinking = steps.filter(({ item: s }) => s.kind === "thinking").length;
   const errors = calls.filter((c) => c.result?.isError).length;
@@ -212,7 +212,7 @@ function PartView(props: { part: Part; view: ViewOpts; cwd?: string; turnId: str
         </div>
       );
     case "process":
-      return <ProcessView steps={visibleSteps(part.steps, view)} mode={view.mode} cwd={cwd} unit={unit} />;
+      return <ProcessView steps={visibleSteps(part.steps, view)} expand={view.expand} cwd={cwd} unit={unit} />;
     case "error":
       return <div className="error-box" data-unit={unit}>⚠ {part.text}</div>;
     case "notice":
@@ -245,8 +245,8 @@ export const TurnView = memo(function TurnView({ turn, view, cwd }: { turn: Turn
           ))}
         </div>
       ) : (
-        view.mode === "final" &&
-        turn.user && <div className="agent-pending muted">还没有最终回答（切到「对话」可查看过程）</div>
+        !view.interim &&
+        turn.user && <div className="agent-pending muted">还没有最终回答（在「显示」里勾选中间回复或思考与工具可查看过程）</div>
       )}
     </section>
   );

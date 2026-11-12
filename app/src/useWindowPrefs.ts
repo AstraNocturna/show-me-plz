@@ -1,6 +1,6 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "./actions";
 
 export type ThemePref = "auto" | "light" | "dark";
@@ -31,6 +31,22 @@ export function useWindowPrefs() {
   const [zoom, setZoom] = useState(loadZoom);
   const [theme, setTheme] = useState(loadTheme);
   const [onTop, setOnTop] = useState(() => localStorage.getItem(TOP_KEY) === "1");
+  // Read by the wheel handler between renders, so quick notches step from the latest level.
+  const zoomRef = useRef(zoom);
+
+  const applyZoom = useCallback((z: number) => {
+    zoomRef.current = z;
+    setZoom(z);
+    toast(`缩放 ${Math.round(z * 100)}%`);
+  }, []);
+  const stepZoom = useCallback(
+    (dir: 1 | -1) => {
+      const i = LEVELS.indexOf(zoomRef.current) + dir;
+      if (i >= 0 && i < LEVELS.length) applyZoom(LEVELS[i]);
+    },
+    [applyZoom],
+  );
+  const resetZoom = useCallback(() => applyZoom(1), [applyZoom]);
 
   useEffect(() => {
     localStorage.setItem(ZOOM_KEY, String(zoom));
@@ -68,32 +84,21 @@ export function useWindowPrefs() {
   }, [onTop]);
 
   useEffect(() => {
-    let current = zoom;
     let acc = 0;
-    const step = (dir: number) => {
-      const i = LEVELS.indexOf(current) + dir;
-      if (i < 0 || i >= LEVELS.length) return;
-      current = LEVELS[i];
-      setZoom(current);
-      toast(`缩放 ${Math.round(current * 100)}%`);
-    };
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
       // deltaY is in CSS pixels, which shrink as the zoom grows; scale back so a notch is a notch at any zoom.
-      acc += e.deltaY * current;
+      acc += e.deltaY * zoomRef.current;
       if (Math.abs(acc) < WHEEL_STEP) return;
-      step(acc < 0 ? 1 : -1);
+      stepZoom(acc < 0 ? 1 : -1);
       acc = 0;
     };
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || e.metaKey) return;
-      if (e.key === "0") {
-        current = 1;
-        setZoom(1);
-        toast("缩放 100%");
-      } else if (e.key === "=" || e.key === "+") step(1);
-      else if (e.key === "-") step(-1);
+      if (e.key === "0") resetZoom();
+      else if (e.key === "=" || e.key === "+") stepZoom(1);
+      else if (e.key === "-") stepZoom(-1);
       else return;
       e.preventDefault();
     };
@@ -103,10 +108,9 @@ export function useWindowPrefs() {
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
     };
-    // `zoom` only seeds `current`; re-subscribing on every step would drop the accumulated wheel delta.
-  }, []);
+  }, [stepZoom, resetZoom]);
 
   const cycleTheme = useCallback(() => setTheme((t) => (t === "auto" ? "light" : t === "light" ? "dark" : "auto")), []);
   const toggleOnTop = useCallback(() => setOnTop((v) => !v), []);
-  return { zoom, theme, cycleTheme, onTop, toggleOnTop };
+  return { zoom, stepZoom, resetZoom, theme, cycleTheme, onTop, toggleOnTop };
 }

@@ -31,6 +31,16 @@ struct LeafEvent {
     leaf: Option<String>,
 }
 
+/// What the agent is doing right now ("thinking", "writing", "tool"; empty or "idle" when nothing).
+/// Kept so a window that finishes loading mid-run can still show it.
+#[derive(Clone, Default, Serialize)]
+struct Activity {
+    state: String,
+    detail: Option<String>,
+}
+
+type SharedActivity = Arc<Mutex<Activity>>;
+
 /// Control messages sent by the pi extension, one JSON object per stdin line.
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -38,11 +48,17 @@ enum HostMessage {
     Session { file: Option<String>, leaf: Option<String> },
     Leaf { id: Option<String> },
     Focus,
+    Activity { state: String, detail: Option<String> },
 }
 
 #[tauri::command]
 fn get_snapshot(state: State<'_, Shared>) -> Snapshot {
     state.lock().unwrap().snapshot()
+}
+
+#[tauri::command]
+fn get_activity(activity: State<'_, SharedActivity>) -> Activity {
+    activity.lock().unwrap().clone()
 }
 
 fn focus_main(app: &AppHandle) {
@@ -73,7 +89,7 @@ fn spawn_poller(app: AppHandle, state: Shared) {
 }
 
 /// Reads host control messages. EOF means pi exited; the window stays open for reading.
-fn spawn_stdin_reader(app: AppHandle, state: Shared) {
+fn spawn_stdin_reader(app: AppHandle, state: Shared, activity: SharedActivity) {
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {
             let Ok(line) = line else { break };
@@ -96,8 +112,14 @@ fn spawn_stdin_reader(app: AppHandle, state: Shared) {
                     let _ = app.emit("leaf-changed", LeafEvent { generation, leaf: id });
                 }
                 HostMessage::Focus => focus_main(&app),
+                HostMessage::Activity { state, detail } => {
+                    let a = Activity { state, detail };
+                    *activity.lock().unwrap() = a.clone();
+                    let _ = app.emit("activity", a);
+                }
             }
         }
+        *activity.lock().unwrap() = Activity::default();
         let _ = app.emit("host-disconnected", ());
     });
 }
@@ -116,17 +138,20 @@ fn initial_session_arg() -> Option<PathBuf> {
 pub fn run() {
     let state: Shared = Arc::new(Mutex::new(SessionState::default()));
     state.lock().unwrap().switch_to(initial_session_arg(), None);
+    let activity: SharedActivity = Arc::default();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(state.clone())
+        .manage(activity.clone())
         .setup(move |app| {
             spawn_poller(app.handle().clone(), state.clone());
-            spawn_stdin_reader(app.handle().clone(), state.clone());
+            spawn_stdin_reader(app.handle().clone(), state.clone(), activity.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
+            get_activity,
             marks::load_marks,
             marks::save_marks,
             files::read_file,

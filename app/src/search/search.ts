@@ -1,9 +1,7 @@
 import { shownArgs, toolSummary } from "../session/toolSummary.ts";
 import { partKey, stepKey, userKey } from "../session/units.ts";
 import type { Turn } from "../session/viewModel";
-import { visibleParts, visibleSteps, type ViewOpts } from "../session/view.ts";
-
-const SHOW_ALL: ViewOpts = { mode: "full", tools: true };
+import { DEFAULT_VIEW, visibleParts, visibleSteps, type ViewOpts } from "../session/view.ts";
 
 export type UnitKind = "user" | "answer" | "process";
 export type Scope = "all" | UnitKind;
@@ -31,9 +29,9 @@ export const MAX_HITS = 5000;
 
 /**
  * Every searchable piece of text shown in the current view, including content folded away in the UI.
- * Content the view hides (tools turned off, intermediate text in "final" mode) is left out.
+ * Content the view hides (process blocks, interim text) is left out.
  */
-export function buildUnits(turns: Turn[], cwd?: string, view: ViewOpts = SHOW_ALL): Unit[] {
+export function buildUnits(turns: Turn[], cwd?: string, view: ViewOpts = DEFAULT_VIEW): Unit[] {
   const units: Unit[] = [];
   for (const t of turns) {
     if (t.user) units.push({ key: userKey(t.id), turnId: t.id, kind: "user", text: t.user.text });

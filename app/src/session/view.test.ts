@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { visibleParts, visibleSteps } from "./view.ts";
+import { DEFAULT_VIEW, visibleParts, visibleSteps } from "./view.ts";
 import { buildUnits, findHits, makeMatcher } from "../search/search.ts";
 import type { Step, Turn } from "./viewModel.ts";
 
@@ -20,37 +20,42 @@ const turn: Turn = {
     { kind: "text", entryId: "a", text: "Let me look." },
     { kind: "process", entryId: "b", steps: [thinking, tool("c1")] },
     { kind: "text", entryId: "c", text: "Found it, fixing." },
-    { kind: "process", entryId: "d", steps: [tool("c2"), meta] },
+    { kind: "process", entryId: "d", steps: [tool("c2")] },
+    { kind: "process", entryId: "g", steps: [meta] },
     { kind: "text", entryId: "e", text: "Done: the final answer." },
     { kind: "error", entryId: "f", text: "aborted" },
   ],
 };
+const indexes = (v: typeof DEFAULT_VIEW, t: Turn = turn) => visibleParts(t, v).map((p) => p.index);
 
-test("final mode keeps only the closing answer: text and errors after the last process block", () => {
-  const parts = visibleParts(turn, { mode: "final", tools: true });
-  assert.deepEqual(parts.map((p) => p.index), [4, 5], "original indexes are kept for unit keys");
+test("default view shows everything except blocks holding only meta lines", () => {
+  assert.deepEqual(indexes(DEFAULT_VIEW), [0, 1, 2, 3, 5, 6]);
 });
 
-test("final mode is empty while a turn is still working (it ends on a process block)", () => {
+test("without interim text and process, only the closing answer remains (original indexes kept)", () => {
+  assert.deepEqual(indexes({ interim: false, process: false, expand: false }), [5, 6]);
+});
+
+test("the closing answer is empty while a turn is still working (it ends on a process block)", () => {
   const working: Turn = { ...turn, parts: turn.parts.slice(0, 4) };
-  assert.deepEqual(visibleParts(working, { mode: "final", tools: true }), []);
-  const noTools: Turn = { ...turn, parts: [{ kind: "text", entryId: "x", text: "Plain reply." }] };
-  assert.deepEqual(visibleParts(noTools, { mode: "final", tools: true }).map((p) => p.index), [0]);
+  assert.deepEqual(indexes({ interim: false, process: false, expand: false }, working), []);
+  const plain: Turn = { ...turn, parts: [{ kind: "text", entryId: "x", text: "Plain reply." }] };
+  assert.deepEqual(indexes({ interim: false, process: false, expand: false }, plain), [0]);
 });
 
-test("tools off hides tool steps and blocks left with nothing but meta lines", () => {
-  const view = { mode: "chat" as const, tools: false };
-  assert.deepEqual(visibleParts(turn, view).map((p) => p.index), [0, 1, 2, 4, 5], "block d had only a tool + meta");
-  const steps = visibleSteps((turn.parts[1] as { steps: Step[] }).steps, view);
-  assert.deepEqual(steps.map((s) => [s.item.kind, s.index]), [["thinking", 0]]);
-  assert.equal(visibleParts(turn, { mode: "chat", tools: true }).length, 6);
+test("hiding the process hides thinking and tools together; interim text stays", () => {
+  assert.deepEqual(indexes({ interim: true, process: false, expand: false }), [0, 2, 5, 6]);
+  assert.deepEqual(visibleSteps([thinking, tool("x")], { ...DEFAULT_VIEW, process: false }), []);
+  assert.deepEqual(indexes({ interim: false, process: true, expand: false }), [1, 3, 5, 6], "process without interim text");
 });
 
 test("search only covers what the view shows", () => {
-  const re = makeMatcher("out c", { regex: false, caseSensitive: false }) as RegExp;
-  assert.equal(findHits(buildUnits([turn], undefined, { mode: "full", tools: true }), re, "all").length, 2);
-  assert.equal(findHits(buildUnits([turn], undefined, { mode: "full", tools: false }), re, "all").length, 0);
-  const fix = makeMatcher("fixing", { regex: false, caseSensitive: false }) as RegExp;
-  assert.equal(findHits(buildUnits([turn], undefined, { mode: "final", tools: true }), fix, "all").length, 0);
-  assert.equal(findHits(buildUnits([turn], undefined, { mode: "chat", tools: true }), fix, "all").length, 1);
+  const count = (q: string, v: typeof DEFAULT_VIEW) =>
+    findHits(buildUnits([turn], undefined, v), makeMatcher(q, { regex: false, caseSensitive: false }) as RegExp, "all").length;
+  assert.equal(count("out c", DEFAULT_VIEW), 2);
+  assert.equal(count("let me think", DEFAULT_VIEW), 1);
+  assert.equal(count("out c", { ...DEFAULT_VIEW, process: false }), 0);
+  assert.equal(count("let me think", { ...DEFAULT_VIEW, process: false }), 0);
+  assert.equal(count("fixing", { ...DEFAULT_VIEW, interim: false }), 0);
+  assert.equal(count("final answer", { interim: false, process: false, expand: false }), 1);
 });
