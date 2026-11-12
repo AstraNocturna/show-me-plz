@@ -1,36 +1,26 @@
+/* Colors follow `color-scheme`: data-theme (set by useWindowPrefs, "auto" resolved to the system theme),
+   falling back to the system preference until it is set. */
 :root {
   color-scheme: light dark;
   font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.65;
-  --bg: #f6f7f9;
-  --fg: #1f2328;
-  --muted: #6e7781;
-  --border: #d8dee4;
-  --card: #ffffff;
-  --user-bg: #eaf2ff;
-  --user-border: #b6d0f7;
-  --accent: #0969da;
+  --bg: light-dark(#f6f7f9, #15171b);
+  --fg: light-dark(#1f2328, #e6e8eb);
+  --muted: light-dark(#6e7781, #8b949e);
+  --border: light-dark(#d8dee4, #2f353d);
+  --card: light-dark(#ffffff, #1c1f24);
+  --user-bg: light-dark(#eaf2ff, #192436);
+  --user-border: light-dark(#b6d0f7, #2b4468);
+  --accent: light-dark(#0969da, #4493f8);
   --hover: rgba(127, 127, 127, 0.1);
-  --code-bg: #f3f4f6;
-  --err: #cf222e;
+  --code-bg: light-dark(#f3f4f6, #22262c);
+  --err: light-dark(#cf222e, #f85149);
   --mono: "Cascadia Code", Consolas, "Microsoft YaHei UI", monospace;
   --hit: #d4a72c;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15171b;
-    --fg: #e6e8eb;
-    --muted: #8b949e;
-    --border: #2f353d;
-    --card: #1c1f24;
-    --user-bg: #192436;
-    --user-border: #2b4468;
-    --accent: #4493f8;
-    --code-bg: #22262c;
-    --err: #f85149;
-  }
-}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(--fg); }
@@ -186,6 +176,11 @@ pre.plain {
   font-family: var(--mono); font-size: 12px; line-height: 1.5;
   white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto;
 }
+/* Lines keep their "\n" so the DOM text matches the search index; as blocks it adds no blank line. */
+pre.diff > span { display: block; padding: 0 4px; margin: 0 -4px; }
+pre.diff > .add { background: light-dark(#dafbe1, rgba(46, 160, 67, 0.18)); }
+pre.diff > .del { background: light-dark(#ffebe9, rgba(248, 81, 73, 0.18)); }
+pre.diff > .gap { color: var(--muted); }
 .error-box {
   margin: 6px 0; padding: 6px 10px; border-radius: 6px; font-size: 13px;
   color: var(--err); border: 1px solid var(--err);
@@ -224,8 +219,9 @@ pre.plain {
 }
 .code-block pre code { font-family: inherit; }
 @media (prefers-color-scheme: dark) {
-  .shiki, .shiki span { color: var(--shiki-dark) !important; }
+  :root:not([data-theme="light"]) :is(.shiki, .shiki span) { color: var(--shiki-dark) !important; }
 }
+:root[data-theme="dark"] :is(.shiki, .shiki span) { color: var(--shiki-dark) !important; }
 
 /* File references */
 .file-ref { color: var(--accent); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }

@@ -1,4 +1,4 @@
-import { toolSummary } from "../session/toolSummary.ts";
+import { shownArgs, toolSummary } from "../session/toolSummary.ts";
 import { partKey, stepKey, userKey } from "../session/units.ts";
 import type { Turn } from "../session/viewModel";
 
@@ -40,10 +40,10 @@ export function buildUnits(turns: Turn[], cwd?: string): Unit[] {
           const k = stepKey(key, j);
           if (s.kind === "thinking") units.push({ key: k, turnId: t.id, kind: "process", text: s.text });
           else if (s.kind === "tool") {
-            // Same order as the DOM: name, summary, args, result.
+            // Same order as the DOM: name, summary, args, diff, result.
             const c = s.call;
-            const args = Object.entries(c.args).map(([a, v]) => `${a} ${typeof v === "string" ? v : JSON.stringify(v)}`);
-            const text = [c.name, toolSummary(c, cwd), ...args, c.result?.text ?? ""].join("\n");
+            const args = shownArgs(c).map(([a, v]) => `${a} ${typeof v === "string" ? v : JSON.stringify(v)}`);
+            const text = [c.name, toolSummary(c, cwd), ...args, c.result?.diff ?? "", c.result?.text ?? ""].join("\n");
             units.push({ key: k, turnId: t.id, kind: "process", text });
           }
         });

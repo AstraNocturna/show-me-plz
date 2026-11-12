@@ -59,3 +59,33 @@ test("invalid regex reports an error and zero-width patterns do not hang", () =>
   const zw = makeMatcher("(?=p)", { regex: true, caseSensitive: false }) as RegExp;
   assert.equal(findHits(buildUnits(turns), zw, "all").length, 0);
 });
+
+test("an edit with a diff is searched as shown: the diff, not its raw edits JSON", () => {
+  const edit: Turn = {
+    id: "t2",
+    user: null,
+    parts: [
+      {
+        kind: "process",
+        entryId: "e",
+        steps: [
+          {
+            kind: "tool",
+            entryId: "e",
+            call: {
+              id: "c2",
+              name: "edit",
+              args: { path: "a.ts", edits: [{ oldText: "let x = 1", newText: "let x = 2" }] },
+              result: { text: "Successfully replaced 1 block(s)", images: [], isError: false, diff: "-3 let x = 1\n+3 let x = 2" },
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const units = buildUnits([edit]);
+  const count = (q: string) => findHits(units, makeMatcher(q, { regex: false, caseSensitive: true }) as RegExp, "all").length;
+  assert.equal(count("oldText"), 0, "raw edits JSON is not displayed, so it must not be searchable");
+  assert.equal(count("let x"), 2, "each changed line is found once, via the diff");
+  assert.equal(count("a.ts"), 2, "path stays visible (summary + path arg)");
+});

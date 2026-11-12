@@ -4,7 +4,7 @@ import { resolvePath } from "../files/fileRef";
 import { MarkButton } from "../marks/marks";
 import { useRevealOpen } from "../reveal";
 import { partKey, stepKey, userKey } from "../session/units";
-import { toolIcon, toolSummary } from "../session/toolSummary";
+import { shownArgs, toolIcon, toolSummary } from "../session/toolSummary";
 import type { ImageContent } from "../session/types";
 import type { Part, Step, ToolCallView, Turn } from "../session/viewModel";
 import { Markdown } from "./Markdown";
@@ -34,8 +34,7 @@ function answerText(turn: Turn): string {
   return turn.parts.flatMap((p) => (p.kind === "text" ? [p.text] : [])).join("\n\n");
 }
 
-function ToolArgs({ args }: { args: Record<string, unknown> }) {
-  const entries = Object.entries(args);
+function ToolArgs({ entries }: { entries: Array<[string, unknown]> }) {
   if (!entries.length) return null;
   return (
     <div className="tool-args">
@@ -55,13 +54,34 @@ function ToolArgs({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-/** The file a tool call worked on (read/edit/write style `path` args), with read's offset as the line. */
+/** pi's edit diff: lines start with "+", "-" or " ", then the line number; "..." lines mark skipped context. */
+function DiffView({ diff }: { diff: string }) {
+  return (
+    <pre className="plain diff">
+      {diff.split("\n").map((line, i) => {
+        const kind = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : line.trim() === "..." ? "gap" : "";
+        return (
+          <span key={i} className={kind}>
+            {line}
+            {"\n"}
+          </span>
+        );
+      })}
+    </pre>
+  );
+}
+
+/**
+ * The file a tool call worked on (read/edit/write style `path` args), at read's offset or the first line
+ * an edit changed.
+ */
 function toolFile(call: ToolCallView, cwd?: string): { path: string; line?: number } | null {
   const p = call.args.path ?? call.args.file_path;
   const abs = typeof p === "string" ? resolvePath(p, cwd) : null;
   if (!abs) return null;
   const offset = call.args.offset;
-  return { path: abs, line: typeof offset === "number" && offset > 0 ? offset : undefined };
+  const line = typeof offset === "number" && offset > 0 ? offset : call.result?.firstChangedLine;
+  return { path: abs, line };
 }
 
 function ToolStepView({ call, cwd, unit }: { call: ToolCallView; cwd?: string; unit: string }) {
@@ -89,7 +109,8 @@ function ToolStepView({ call, cwd, unit }: { call: ToolCallView; cwd?: string; u
       </div>
       {open && (
         <div className="step-detail">
-          <ToolArgs args={call.args} />
+          <ToolArgs entries={shownArgs(call)} />
+          {call.result?.diff && <DiffView diff={call.result.diff} />}
           {call.result && (
             <>
               <div className="detail-head">

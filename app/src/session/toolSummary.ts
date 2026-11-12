@@ -12,6 +12,12 @@ const ICONS: Record<string, string> = {
   todo: "☑️",
 };
 
+/** Arguments shown in a tool step's detail. An edit with a diff shows the diff instead of its raw `edits`. */
+export function shownArgs(call: ToolCallView): Array<[string, unknown]> {
+  const entries = Object.entries(call.args);
+  return call.result?.diff ? entries.filter(([k]) => k !== "edits") : entries;
+}
+
 // Argument names, in priority order, that best describe what a call did.
 const KEY_ARGS = ["path", "file_path", "command", "query", "url", "pattern", "subject", "action"];
 

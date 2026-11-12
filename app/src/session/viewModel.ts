@@ -4,6 +4,9 @@ export interface ToolResultView {
   text: string;
   images: ImageContent[];
   isError: boolean;
+  /** Unified diff with line numbers that pi's edit tool reports in `details`. */
+  diff?: string;
+  firstChangedLine?: number;
 }
 
 export interface ToolCallView {
@@ -111,7 +114,15 @@ export function buildTurns(branch: SessionEntry[]): Turn[] {
           }
         } else if (m.role === "toolResult") {
           const call = callsById.get(String(m.toolCallId));
-          if (call) call.result = { text: joinText(blocks), images: images(blocks), isError: m.isError === true };
+          const details = (m.details ?? {}) as { diff?: unknown; firstChangedLine?: unknown };
+          if (call)
+            call.result = {
+              text: joinText(blocks),
+              images: images(blocks),
+              isError: m.isError === true,
+              diff: typeof details.diff === "string" ? details.diff : undefined,
+              firstChangedLine: typeof details.firstChangedLine === "number" ? details.firstChangedLine : undefined,
+            };
         } else if (m.role === "bashExecution") {
           // User-run `!cmd`: show it like a tool call so it folds the same way.
           const call: ToolCallView = {

@@ -16,6 +16,7 @@ import { userKey } from "./session/units";
 import { useSession } from "./session/useSession";
 import { buildTurns } from "./session/viewModel";
 import { useSplit } from "./useSplit";
+import { useWindowPrefs, type ThemePref } from "./useWindowPrefs";
 import "./styles.css";
 
 const MODE_KEY = "smp.mode";
@@ -32,8 +33,15 @@ const SHORTCUTS: Array<[string, string]> = [
   ["'", "打开书签面板"],
   ["v", "切换 对话 / 完整 模式"],
   ["Esc", "依次关闭图片、帮助、搜索、文件预览"],
+  ["Ctrl+滚轮", "缩放（Ctrl+= / Ctrl+- 同样可用，Ctrl+0 还原）"],
   ["?", "显示/隐藏本帮助"],
 ];
+
+const THEME_LABEL: Record<ThemePref, [string, string]> = {
+  auto: ["◐", "主题：跟随系统"],
+  light: ["☀", "主题：浅色"],
+  dark: ["☾", "主题：深色"],
+};
 
 function isTyping(e: KeyboardEvent): boolean {
   const t = e.target as HTMLElement | null;
@@ -55,6 +63,7 @@ export default function App() {
   const timeline = useRef<HTMLElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const split = useSplit(workspace);
+  const prefs = useWindowPrefs();
 
   const header = useMemo(() => session.entries.find((e) => e.type === "session"), [session.entries]);
   const cwd = typeof header?.cwd === "string" ? header.cwd : undefined;
@@ -129,7 +138,11 @@ export default function App() {
       else el.scrollTop = el.scrollHeight;
     });
     ro.observe(inner);
-    const markInput = () => (lastInput.current = Date.now());
+    const markInput = (e: Event) => {
+      // Ctrl+wheel zooms; the relayout that follows must keep following the bottom.
+      if (e instanceof WheelEvent && e.ctrlKey) return;
+      lastInput.current = Date.now();
+    };
     const events = ["wheel", "mousedown", "keydown", "touchstart"] as const;
     events.forEach((ev) => window.addEventListener(ev, markInput, { capture: true }));
     return () => {
@@ -290,6 +303,12 @@ export default function App() {
                 完整
               </button>
             </div>
+            <button className="toggle" title={`${THEME_LABEL[prefs.theme][1]}（点击切换）`} onClick={prefs.cycleTheme}>
+              {THEME_LABEL[prefs.theme][0]}
+            </button>
+            <button className={`toggle ${prefs.onTop ? "on" : ""}`} title={prefs.onTop ? "取消置顶" : "窗口置顶"} onClick={prefs.toggleOnTop}>
+              📌
+            </button>
             <button className="toggle" title="快捷键 (?)" onClick={() => setHelp(!help)}>⌨</button>
             <span className="status">{session.hostConnected ? "● 同步中" : "○ pi 已退出"}</span>
           </header>
