@@ -1,5 +1,6 @@
 mod files;
 mod marks;
+mod qa;
 mod session;
 
 use std::io::BufRead;
@@ -9,8 +10,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use qa::{Qa, SharedQa};
 use session::{Poll, SessionState, Snapshot};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 type Shared = Arc<Mutex<SessionState>>;
 
@@ -49,6 +51,8 @@ enum HostMessage {
     Leaf { id: Option<String> },
     Focus,
     Activity { state: String, detail: Option<String> },
+    /// How to start the host's own pi, used to fork the session for side questions.
+    Host { node: String, cli: String },
 }
 
 #[tauri::command]
@@ -89,7 +93,7 @@ fn spawn_poller(app: AppHandle, state: Shared) {
 }
 
 /// Reads host control messages. EOF means pi exited; the window stays open for reading.
-fn spawn_stdin_reader(app: AppHandle, state: Shared, activity: SharedActivity) {
+fn spawn_stdin_reader(app: AppHandle, state: Shared, activity: SharedActivity, qa: SharedQa) {
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {
             let Ok(line) = line else { break };
@@ -117,6 +121,7 @@ fn spawn_stdin_reader(app: AppHandle, state: Shared, activity: SharedActivity) {
                     *activity.lock().unwrap() = a.clone();
                     let _ = app.emit("activity", a);
                 }
+                HostMessage::Host { node, cli } => qa.lock().unwrap().set_launch(node, cli),
             }
         }
         *activity.lock().unwrap() = Activity::default();
@@ -139,15 +144,21 @@ pub fn run() {
     let state: Shared = Arc::new(Mutex::new(SessionState::default()));
     state.lock().unwrap().switch_to(initial_session_arg(), None);
     let activity: SharedActivity = Arc::default();
+    let qa: SharedQa = Arc::new(Mutex::new(Qa::default()));
+    Qa::sweep_stale();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(state.clone())
         .manage(activity.clone())
-        .setup(move |app| {
-            spawn_poller(app.handle().clone(), state.clone());
-            spawn_stdin_reader(app.handle().clone(), state.clone(), activity.clone());
-            Ok(())
+        .manage(qa.clone())
+        .setup({
+            let qa = qa.clone();
+            move |app| {
+                spawn_poller(app.handle().clone(), state.clone());
+                spawn_stdin_reader(app.handle().clone(), state.clone(), activity.clone(), qa.clone());
+                Ok(())
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -155,8 +166,17 @@ pub fn run() {
             marks::load_marks,
             marks::save_marks,
             files::read_file,
-            files::check_paths
+            files::check_paths,
+            qa::qa_start,
+            qa::qa_send,
+            qa::qa_stop
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |_, event| {
+            // Closing the window discards the side-question thread and its fork.
+            if let RunEvent::Exit = event {
+                qa.lock().unwrap().stop();
+            }
+        });
 }

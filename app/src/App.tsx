@@ -4,11 +4,14 @@ import { FilePreview } from "./components/FilePreview";
 import { Markers, type MarkerSpec } from "./components/Markers";
 import { MarksPanel, sortMarks } from "./components/MarksPanel";
 import { Outline } from "./components/Outline";
+import { QaPanel } from "./components/QaPanel";
+import { SelectionAsk } from "./components/SelectionAsk";
 import { SearchBar } from "./components/SearchBar";
 import { TurnView } from "./components/TurnView";
 import { ViewMenu } from "./components/ViewMenu";
 import { MARK_COLORS, MarksContext, useMarks, type Mark } from "./marks/marks";
 import type { FileRef } from "./files/fileRef";
+import { AskContext, useQa } from "./qa/useQa";
 import { RevealContext, type Reveal } from "./reveal";
 import { findUnitEl } from "./search/dom";
 import { useSearch } from "./search/useSearch";
@@ -47,7 +50,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ["m", "给当前提问加/取消书签"],
   ["] / [", "下一个 / 上一个书签"],
   ["'", "打开书签面板"],
-  ["Esc", "依次关闭图片、帮助、搜索、文件预览"],
+  ["Esc", "依次关闭图片、帮助、搜索、文件预览、问答面板"],
   ["Ctrl+滚轮", "缩放（Ctrl+= / Ctrl+- 同样可用，Ctrl+0 还原）"],
   ["?", "显示/隐藏本帮助"],
 ];
@@ -76,6 +79,8 @@ export default function App() {
   const [searchFocus, setSearchFocus] = useState(0);
   const [hasNew, setHasNew] = useState(false);
   const [preview, setPreview] = useState<FileRef | null>(null);
+  const [qaOpen, setQaOpen] = useState(false);
+  const [qaFocus, setQaFocus] = useState(0);
   const timeline = useRef<HTMLElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const split = useSplit(workspace);
@@ -95,6 +100,18 @@ export default function App() {
   const sortedMarks = useMemo(() => sortMarks(marks.marks, turnOrder), [marks.marks, turnOrder]);
   const markedTurns = useMemo(() => new Set(marks.marks.map((m) => m.turnId)), [marks.marks]);
   const search = useSearch({ turns, cwd, view, timeline, activeTurnId: activeId, reveal: revealKey });
+  const qa = useQa(session.file, cwd);
+  const { setQuote } = qa;
+  const ask = useCallback(
+    (quote: string) => {
+      setQuote(quote);
+      setQaOpen(true);
+      setQaFocus((n) => n + 1);
+    },
+    [setQuote],
+  );
+  // The side pane shows a file preview when there is one, otherwise the Q&A panel if open.
+  const side = preview ? "file" : qaOpen ? "qa" : null;
 
   useEffect(() => localStorage.setItem(VIEW_KEY, JSON.stringify(view)), [view]);
 
@@ -204,8 +221,8 @@ export default function App() {
   );
 
   // ---- Keyboard ----
-  const stateRef = useRef({ turns, activeId, sortedMarks, turnOrder, search, lightbox, help, preview });
-  stateRef.current = { turns, activeId, sortedMarks, turnOrder, search, lightbox, help, preview };
+  const stateRef = useRef({ turns, activeId, sortedMarks, turnOrder, search, lightbox, help, preview, qaOpen });
+  stateRef.current = { turns, activeId, sortedMarks, turnOrder, search, lightbox, help, preview, qaOpen };
 
   // Navigation shared by the keyboard and the floating buttons; reads current state through stateRef.
   const nav = useMemo(() => {
@@ -254,6 +271,7 @@ export default function App() {
         else if (s.help) setHelp(false);
         else if (s.search.open) s.search.setOpen(false);
         else if (s.preview) setPreview(null);
+        else if (s.qaOpen) setQaOpen(false);
         return;
       }
       if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -310,6 +328,7 @@ export default function App() {
   }, [sortedMarks, search.open, search.hits]);
 
   return (
+    <AskContext.Provider value={ask}>
     <MarksContext.Provider value={marks}>
       <RevealContext.Provider value={reveal}>
         <div className="app">
@@ -328,6 +347,16 @@ export default function App() {
               🔍
             </button>
             <ViewMenu view={view} onChange={setView} />
+            <button
+              className={`toggle ${qaOpen ? "on" : ""}`}
+              title={qaOpen ? "收起问答" : "问答：向继承了主会话上下文的子代理提问"}
+              onClick={() => {
+                setQaOpen(!qaOpen);
+                setQaFocus((n) => n + 1);
+              }}
+            >
+              💬{qa.busy && <span className="qa-dot" />}
+            </button>
             <div className="zoom">
               <button onClick={() => prefs.stepZoom(-1)} title="缩小（Ctrl+滚轮同样可用）">−</button>
               <button onClick={prefs.resetZoom} title="还原到 100%">{Math.round(prefs.zoom * 100)}%</button>
@@ -361,7 +390,7 @@ export default function App() {
               )}
             </aside>
             <div ref={workspace} className={`workspace ${split.dir}`}>
-              <div className="main" style={preview ? { flex: `0 0 ${split.ratio * 100}%` } : undefined}>
+              <div className="main" style={side ? { flex: `0 0 ${split.ratio * 100}%` } : undefined}>
                 {search.open && <SearchBar s={search} focusNonce={searchFocus} />}
                 <div className="timeline-wrap">
                   <main className="timeline" ref={timeline} onScroll={onScroll} onClick={(e) => handleContentClick(e, setLightbox, setPreview)}>
@@ -394,11 +423,21 @@ export default function App() {
                   {hasNew && (
                     <button className="new-pill" onClick={scrollToBottom}>↓ 有新消息</button>
                   )}
+                  <SelectionAsk root={timeline} onAsk={ask} />
                 </div>
               </div>
+              {side && <div className="divider" onPointerDown={split.startDrag} title="拖动调整分屏比例" />}
+              {side === "qa" && (
+                <QaPanel
+                  qa={qa}
+                  cwd={cwd}
+                  focusNonce={qaFocus}
+                  onClose={() => setQaOpen(false)}
+                  onContentClick={(e) => handleContentClick(e, setLightbox, setPreview)}
+                />
+              )}
               {preview && (
                 <>
-                  <div className="divider" onPointerDown={split.startDrag} title="拖动调整分屏比例" />
                   <FilePreview
                     target={preview}
                     cwd={cwd}
@@ -431,5 +470,6 @@ export default function App() {
         </div>
       </RevealContext.Provider>
     </MarksContext.Provider>
+    </AskContext.Provider>
   );
 }

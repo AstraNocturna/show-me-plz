@@ -1,5 +1,6 @@
-import { memo, useState } from "react";
+import { memo, useContext, useState } from "react";
 import { copyText } from "../actions";
+import { AskContext } from "../qa/useQa";
 import { resolvePath } from "../files/fileRef";
 import { MarkButton } from "../marks/marks";
 import { useRevealOpen } from "../reveal";
@@ -196,6 +197,15 @@ function NoticeView({ title, text, cwd, unit }: { title: string; text: string; c
   );
 }
 
+function AskButton({ text }: { text: string }) {
+  const ask = useContext(AskContext);
+  return ask ? (
+    <button className="copy-btn" onClick={() => ask(text)} title="针对这段回答向子代理提问">
+      问
+    </button>
+  ) : null;
+}
+
 function PartView(props: { part: Part; view: ViewOpts; cwd?: string; turnId: string; unit: string }) {
   const { part, view, cwd, turnId, unit } = props;
   switch (part.kind) {
@@ -204,6 +214,7 @@ function PartView(props: { part: Part; view: ViewOpts; cwd?: string; turnId: str
         <div className="answer" data-unit={unit}>
           <div className="float-actions">
             <MarkButton unitKey={unit} turnId={turnId} preview={part.text} />
+            <AskButton text={part.text} />
             <button className="copy-btn" onClick={() => void copyText(part.text)} title="复制原始 Markdown">
               复制
             </button>

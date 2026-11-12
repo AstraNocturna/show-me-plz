@@ -15,6 +15,7 @@ type HostMessage =
   | { type: "session"; file: string | null; leaf: string | null }
   | { type: "leaf"; id: string | null }
   | { type: "focus" }
+  | { type: "host"; node: string; cli: string }
   | Activity;
 
 /** Live agent state for the viewer's "working" indicator; entries only reach the file once complete. */
@@ -56,17 +57,19 @@ function send(msg: HostMessage): void {
   alive()?.stdin?.write(JSON.stringify(msg) + "\n");
 }
 
-function sessionMessage(ctx: ExtensionContext): HostMessage {
-  return {
+/** The session to show, plus how to start this same pi (the viewer forks it for side questions). */
+function sendSession(ctx: ExtensionContext): void {
+  send({ type: "host", node: process.execPath, cli: process.argv[1] ?? "" });
+  send({
     type: "session",
     file: ctx.sessionManager.getSessionFile() ?? null,
     leaf: ctx.sessionManager.getLeafId() ?? null,
-  };
+  });
 }
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
-    send(sessionMessage(ctx));
+    sendSession(ctx);
   });
 
   pi.on("session_tree", async (event) => {
@@ -94,7 +97,7 @@ export default function (pi: ExtensionAPI) {
     description: "打开/聚焦 show-me-plz 会话阅读窗口",
     handler: async (_args, ctx) => {
       if (alive()) {
-        send(sessionMessage(ctx));
+        sendSession(ctx);
         send({ type: "focus" });
         return;
       }
@@ -109,7 +112,7 @@ export default function (pi: ExtensionAPI) {
       child.stdin?.on("error", () => {}); // viewer closed: ignore EPIPE
       child.unref();
       shared.child = child;
-      send(sessionMessage(ctx));
+      sendSession(ctx);
       if (shared.activity) send(shared.activity);
     },
   });
