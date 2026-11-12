@@ -6,10 +6,9 @@ import { useRevealOpen } from "../reveal";
 import { partKey, stepKey, userKey } from "../session/units";
 import { shownArgs, toolIcon, toolSummary } from "../session/toolSummary";
 import type { ImageContent } from "../session/types";
+import { visibleParts, visibleSteps, type Indexed, type Mode, type ViewOpts } from "../session/view";
 import type { Part, Step, ToolCallView, Turn } from "../session/viewModel";
 import { Markdown } from "./Markdown";
-
-export type Mode = "chat" | "full";
 
 const MAX_RESULT_CHARS = 20000;
 
@@ -151,12 +150,12 @@ function ThinkingStepView({ text, cwd, unit }: { text: string; cwd?: string; uni
   );
 }
 
-function ProcessView({ steps, mode, cwd, unit }: { steps: Step[]; mode: Mode; cwd?: string; unit: string }) {
+function ProcessView({ steps, mode, cwd, unit }: { steps: Indexed<Step>[]; mode: Mode; cwd?: string; unit: string }) {
   const [override, setOverride] = useState<boolean | null>(null);
   useRevealOpen(unit, () => setOverride(true));
   const open = override ?? mode === "full";
-  const calls = steps.flatMap((s) => (s.kind === "tool" ? [s.call] : []));
-  const thinking = steps.filter((s) => s.kind === "thinking").length;
+  const calls = steps.flatMap(({ item: s }) => (s.kind === "tool" ? [s.call] : []));
+  const thinking = steps.filter(({ item: s }) => s.kind === "thinking").length;
   const errors = calls.filter((c) => c.result?.isError).length;
   const preview = calls.slice(0, 4).map((c) => `${toolIcon(c.name)} ${toolSummary(c, cwd) || c.name}`);
 
@@ -174,7 +173,7 @@ function ProcessView({ steps, mode, cwd, unit }: { steps: Step[]; mode: Mode; cw
       </button>
       {open && (
         <div className="steps">
-          {steps.map((s, i) => (
+          {steps.map(({ item: s, index: i }) => (
             <StepView key={i} step={s} cwd={cwd} unit={stepKey(unit, i)} />
           ))}
         </div>
@@ -197,8 +196,8 @@ function NoticeView({ title, text, cwd, unit }: { title: string; text: string; c
   );
 }
 
-function PartView(props: { part: Part; mode: Mode; cwd?: string; turnId: string; unit: string }) {
-  const { part, mode, cwd, turnId, unit } = props;
+function PartView(props: { part: Part; view: ViewOpts; cwd?: string; turnId: string; unit: string }) {
+  const { part, view, cwd, turnId, unit } = props;
   switch (part.kind) {
     case "text":
       return (
@@ -213,7 +212,7 @@ function PartView(props: { part: Part; mode: Mode; cwd?: string; turnId: string;
         </div>
       );
     case "process":
-      return <ProcessView steps={part.steps} mode={mode} cwd={cwd} unit={unit} />;
+      return <ProcessView steps={visibleSteps(part.steps, view)} mode={view.mode} cwd={cwd} unit={unit} />;
     case "error":
       return <div className="error-box" data-unit={unit}>⚠ {part.text}</div>;
     case "notice":
@@ -221,7 +220,8 @@ function PartView(props: { part: Part; mode: Mode; cwd?: string; turnId: string;
   }
 }
 
-export const TurnView = memo(function TurnView({ turn, mode, cwd }: { turn: Turn; mode: Mode; cwd?: string }) {
+export const TurnView = memo(function TurnView({ turn, view, cwd }: { turn: Turn; view: ViewOpts; cwd?: string }) {
+  const parts = visibleParts(turn, view);
   return (
     <section className="turn" data-turn-id={turn.id}>
       {turn.user && (
@@ -238,11 +238,16 @@ export const TurnView = memo(function TurnView({ turn, mode, cwd }: { turn: Turn
           <Images images={turn.user.images} />
         </div>
       )}
-      <div className="agent">
-        {turn.parts.map((p, i) => (
-          <PartView key={i} part={p} mode={mode} cwd={cwd} turnId={turn.id} unit={partKey(turn.id, i)} />
-        ))}
-      </div>
+      {parts.length > 0 ? (
+        <div className="agent">
+          {parts.map(({ item: p, index: i }) => (
+            <PartView key={i} part={p} view={view} cwd={cwd} turnId={turn.id} unit={partKey(turn.id, i)} />
+          ))}
+        </div>
+      ) : (
+        view.mode === "final" &&
+        turn.user && <div className="agent-pending muted">还没有最终回答（切到「对话」可查看过程）</div>
+      )}
     </section>
   );
 });

@@ -5,7 +5,7 @@ import { Markers, type MarkerSpec } from "./components/Markers";
 import { MarksPanel, sortMarks } from "./components/MarksPanel";
 import { Outline } from "./components/Outline";
 import { SearchBar } from "./components/SearchBar";
-import { TurnView, type Mode } from "./components/TurnView";
+import { TurnView } from "./components/TurnView";
 import { MARK_COLORS, MarksContext, useMarks, type Mark } from "./marks/marks";
 import type { FileRef } from "./files/fileRef";
 import { RevealContext, type Reveal } from "./reveal";
@@ -13,6 +13,7 @@ import { findUnitEl } from "./search/dom";
 import { useSearch } from "./search/useSearch";
 import { activeBranch } from "./session/branch";
 import { userKey } from "./session/units";
+import type { Mode, ViewOpts } from "./session/view";
 import { useSession } from "./session/useSession";
 import { buildTurns } from "./session/viewModel";
 import { useSplit } from "./useSplit";
@@ -20,6 +21,17 @@ import { useWindowPrefs, type ThemePref } from "./useWindowPrefs";
 import "./styles.css";
 
 const MODE_KEY = "smp.mode";
+const TOOLS_KEY = "smp.tools";
+const MODES: Array<[Mode, string, string]> = [
+  ["final", "结论", "只看每轮的最终回答 (v)"],
+  ["chat", "对话", "突出提问与回答，过程折叠 (v)"],
+  ["full", "完整", "展开思考与工具调用 (v)"],
+];
+
+function loadMode(): Mode {
+  const m = localStorage.getItem(MODE_KEY);
+  return m === "final" || m === "full" ? m : "chat";
+}
 const BOTTOM_SLACK = 60;
 const INPUT_GRACE_MS = 800;
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -31,7 +43,8 @@ const SHORTCUTS: Array<[string, string]> = [
   ["m", "给当前提问加/取消书签"],
   ["] / [", "下一个 / 上一个书签"],
   ["'", "打开书签面板"],
-  ["v", "切换 对话 / 完整 模式"],
+  ["v", "切换 结论 / 对话 / 完整 模式"],
+  ["t", "显示/隐藏工具调用"],
   ["Esc", "依次关闭图片、帮助、搜索、文件预览"],
   ["Ctrl+滚轮", "缩放（Ctrl+= / Ctrl+- 同样可用，Ctrl+0 还原）"],
   ["?", "显示/隐藏本帮助"],
@@ -50,7 +63,9 @@ function isTyping(e: KeyboardEvent): boolean {
 
 export default function App() {
   const session = useSession();
-  const [mode, setMode] = useState<Mode>(() => (localStorage.getItem(MODE_KEY) === "full" ? "full" : "chat"));
+  const [mode, setMode] = useState<Mode>(loadMode);
+  const [tools, setTools] = useState(() => localStorage.getItem(TOOLS_KEY) !== "0");
+  const view = useMemo<ViewOpts>(() => ({ mode, tools }), [mode, tools]);
   const [tab, setTab] = useState<"outline" | "marks">("outline");
   const [activeId, setActiveId] = useState<string>();
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -78,9 +93,10 @@ export default function App() {
   const marks = useMarks(sessionId);
   const sortedMarks = useMemo(() => sortMarks(marks.marks, turnOrder), [marks.marks, turnOrder]);
   const markedTurns = useMemo(() => new Set(marks.marks.map((m) => m.turnId)), [marks.marks]);
-  const search = useSearch({ turns, cwd, timeline, activeTurnId: activeId, reveal: revealKey });
+  const search = useSearch({ turns, cwd, view, timeline, activeTurnId: activeId, reveal: revealKey });
 
   useEffect(() => localStorage.setItem(MODE_KEY, mode), [mode]);
+  useEffect(() => localStorage.setItem(TOOLS_KEY, tools ? "1" : "0"), [tools]);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -249,7 +265,10 @@ export default function App() {
           setTab("marks");
           break;
         case "v":
-          setMode((m) => (m === "chat" ? "full" : "chat"));
+          setMode((m) => MODES[(MODES.findIndex(([k]) => k === m) + 1) % MODES.length][0]);
+          break;
+        case "t":
+          setTools((v) => !v);
           break;
         case "?":
           setHelp((h) => !h);
@@ -296,13 +315,20 @@ export default function App() {
               🔍
             </button>
             <div className="segmented">
-              <button className={mode === "chat" ? "on" : ""} onClick={() => setMode("chat")} title="只突出提问与回答，过程折叠 (v)">
-                对话
-              </button>
-              <button className={mode === "full" ? "on" : ""} onClick={() => setMode("full")} title="展开思考与工具调用 (v)">
-                完整
-              </button>
+              {MODES.map(([k, label, title]) => (
+                <button key={k} className={mode === k ? "on" : ""} onClick={() => setMode(k)} title={title}>
+                  {label}
+                </button>
+              ))}
             </div>
+            <button
+              className={`toggle ${tools && mode !== "final" ? "on" : ""}`}
+              disabled={mode === "final"}
+              title={mode === "final" ? "结论模式不显示工具调用" : tools ? "隐藏工具调用 (t)" : "显示工具调用 (t)"}
+              onClick={() => setTools((v) => !v)}
+            >
+              工具
+            </button>
             <button className="toggle" title={`${THEME_LABEL[prefs.theme][1]}（点击切换）`} onClick={prefs.cycleTheme}>
               {THEME_LABEL[prefs.theme][0]}
             </button>
@@ -336,7 +362,7 @@ export default function App() {
                     <div className="timeline-inner">
                       {turns.length === 0 && <div className="empty">暂无对话</div>}
                       {turns.map((t) => (
-                        <TurnView key={`${mode}:${t.id}`} turn={t} mode={mode} cwd={cwd} />
+                        <TurnView key={`${mode}:${t.id}`} turn={t} view={view} cwd={cwd} />
                       ))}
                     </div>
                   </main>

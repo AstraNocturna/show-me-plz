@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { ViewOpts } from "../session/view";
 import type { Turn } from "../session/viewModel";
 import { clearHighlights, findUnitEl, paintHighlights, scrollRangeIntoView, scrollToRect, textRanges } from "./dom";
 import { buildUnits, findHits, makeMatcher, MAX_HITS, type Hit, type Scope } from "./search";
@@ -28,6 +29,7 @@ export interface SearchState {
 interface Deps {
   turns: Turn[];
   cwd?: string;
+  view: ViewOpts;
   timeline: RefObject<HTMLElement | null>;
   activeTurnId?: string;
   reveal(key: string): void;
@@ -35,7 +37,7 @@ interface Deps {
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
-export function useSearch({ turns, cwd, timeline, activeTurnId, reveal }: Deps): SearchState {
+export function useSearch({ turns, cwd, view, timeline, activeTurnId, reveal }: Deps): SearchState {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -50,7 +52,7 @@ export function useSearch({ turns, cwd, timeline, activeTurnId, reveal }: Deps):
     return () => clearTimeout(t);
   }, [query]);
 
-  const units = useMemo(() => buildUnits(turns, cwd), [turns, cwd]);
+  const units = useMemo(() => buildUnits(turns, cwd, view), [turns, cwd, view]);
   const matcher = useMemo(
     () => (open ? makeMatcher(debounced, { regex, caseSensitive }) : null),
     [open, debounced, regex, caseSensitive],

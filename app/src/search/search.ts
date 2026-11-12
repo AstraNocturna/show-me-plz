@@ -1,6 +1,9 @@
 import { shownArgs, toolSummary } from "../session/toolSummary.ts";
 import { partKey, stepKey, userKey } from "../session/units.ts";
 import type { Turn } from "../session/viewModel";
+import { visibleParts, visibleSteps, type ViewOpts } from "../session/view.ts";
+
+const SHOW_ALL: ViewOpts = { mode: "full", tools: true };
 
 export type UnitKind = "user" | "answer" | "process";
 export type Scope = "all" | UnitKind;
@@ -26,17 +29,20 @@ export interface SearchOptions {
 
 export const MAX_HITS = 5000;
 
-/** Every searchable piece of text, including content that is folded away in the UI. */
-export function buildUnits(turns: Turn[], cwd?: string): Unit[] {
+/**
+ * Every searchable piece of text shown in the current view, including content folded away in the UI.
+ * Content the view hides (tools turned off, intermediate text in "final" mode) is left out.
+ */
+export function buildUnits(turns: Turn[], cwd?: string, view: ViewOpts = SHOW_ALL): Unit[] {
   const units: Unit[] = [];
   for (const t of turns) {
     if (t.user) units.push({ key: userKey(t.id), turnId: t.id, kind: "user", text: t.user.text });
-    t.parts.forEach((p, i) => {
+    visibleParts(t, view).forEach(({ item: p, index: i }) => {
       const key = partKey(t.id, i);
       if (p.kind === "text" || p.kind === "error") units.push({ key, turnId: t.id, kind: "answer", text: p.text });
       else if (p.kind === "notice") units.push({ key, turnId: t.id, kind: "process", text: `${p.title}\n${p.text}` });
       else if (p.kind === "process") {
-        p.steps.forEach((s, j) => {
+        visibleSteps(p.steps, view).forEach(({ item: s, index: j }) => {
           const k = stepKey(key, j);
           if (s.kind === "thinking") units.push({ key: k, turnId: t.id, kind: "process", text: s.text });
           else if (s.kind === "tool") {

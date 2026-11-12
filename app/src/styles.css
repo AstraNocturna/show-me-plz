@@ -93,6 +93,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .toggle { padding: 1px 7px; border-radius: 5px; color: var(--muted); font-family: var(--mono); font-size: 12px; }
 .toggle:hover { background: var(--hover); color: var(--fg); }
 .toggle.on { background: var(--accent); color: #fff; }
+.toggle:disabled { opacity: 0.4; cursor: default; background: none; color: var(--muted); }
 .segmented.small button { padding: 0 8px; font-size: 12px; }
 ::highlight(smp-hit) { background-color: rgba(212, 167, 44, 0.4); }
 ::highlight(smp-current) { background-color: #ff9632; color: #000; }
@@ -123,7 +124,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .card-head { display: flex; align-items: center; gap: 10px; }
 .who { font-weight: 600; font-size: 13px; }
-.agent { padding: 0 4px; }
+.agent {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 4px 14px;
+}
+.agent-pending { padding: 4px 14px; font-size: 13px; }
 .answer { position: relative; margin: 6px 0; }
 .float-actions { position: absolute; right: 0; top: 0; display: flex; gap: 4px; opacity: 0; }
 .answer:hover > .float-actions { opacity: 1; }
