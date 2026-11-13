@@ -5,7 +5,7 @@ import { Markers, type MarkerSpec } from "./components/Markers";
 import { MarksPanel, sortMarks } from "./components/MarksPanel";
 import { Outline } from "./components/Outline";
 import { StatusBar } from "./components/StatusBar";
-import { TodoPanel } from "./components/TodoPanel";
+import { TodoSection } from "./components/TodoPanel";
 import { QaPanel } from "./components/QaPanel";
 import { SelectionAsk } from "./components/SelectionAsk";
 import { SearchBar } from "./components/SearchBar";
@@ -13,6 +13,7 @@ import { TurnView } from "./components/TurnView";
 import { ViewMenu } from "./components/ViewMenu";
 import { MARK_COLORS, MarksContext, useMarks, type Mark } from "./marks/marks";
 import type { FileRef } from "./files/fileRef";
+import { agentKey, FoldContext, useFoldState } from "./fold";
 import { AskContext, useQa } from "./qa/useQa";
 import { RevealContext, type Reveal } from "./reveal";
 import { findUnitEl } from "./search/dom";
@@ -74,7 +75,8 @@ export default function App() {
   const session = useSession();
   const activity = useActivity();
   const [view, setView] = useState<ViewOpts>(loadView);
-  const [tab, setTab] = useState<"outline" | "marks" | "todos">("outline");
+  const [tab, setTab] = useState<"outline" | "marks">("outline");
+  const [todoOpen, setTodoOpen] = useState(true);
   const [activeId, setActiveId] = useState<string>();
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
@@ -97,6 +99,8 @@ export default function App() {
   const turns = useMemo(() => buildTurns(branch), [branch]);
   const todos = useMemo(() => todosOf(branch), [branch]);
   const stats = useMemo(() => footerStats(branch), [branch]);
+  const folds = useFoldState();
+  const allBoxes = useMemo(() => turns.flatMap((t) => [...(t.user ? [userKey(t.id)] : []), agentKey(t.id)]), [turns]);
   const hostStatus = useHostStatus();
   // Entries land when the agent finishes something: a good moment to re-read git.
   const git = useGit(cwd, session.entries.length);
@@ -338,6 +342,7 @@ export default function App() {
     <AskContext.Provider value={ask}>
     <MarksContext.Provider value={marks}>
       <RevealContext.Provider value={reveal}>
+      <FoldContext.Provider value={folds}>
         <div className="app">
           <header className="topbar">
             <span className="file" title={session.file ?? ""}>
@@ -352,6 +357,13 @@ export default function App() {
               }}
             >
               🔍
+            </button>
+            <button
+              className={`toggle ${folds.count > 0 ? "on" : ""}`}
+              title={folds.count > 0 ? "展开全部提问和回答" : "折叠全部提问和回答（每个框左上角的 ▾ 可单独折叠）"}
+              onClick={() => folds.setMany(allBoxes, folds.count === 0)}
+            >
+              {folds.count > 0 ? "⊞" : "⊟"}
             </button>
             <ViewMenu view={view} onChange={setView} />
             <button
@@ -389,18 +401,14 @@ export default function App() {
                 <button className={tab === "marks" ? "on" : ""} onClick={() => setTab("marks")}>
                   书签 · {marks.marks.length}
                 </button>
-                {todos.length > 0 && (
-                  <button className={tab === "todos" ? "on" : ""} onClick={() => setTab("todos")}>
-                    待办 · {todos.filter((t) => t.status === "completed").length}/{todos.length}
-                  </button>
-                )}
               </div>
-              {tab === "todos" && todos.length > 0 ? (
-                <TodoPanel todos={todos} />
-              ) : tab === "marks" ? (
+              {tab === "marks" ? (
                 <MarksPanel api={marks} sorted={sortedMarks} turnOrder={turnOrder} onJump={jumpToMark} />
               ) : (
-                <Outline turns={turns} activeId={activeId} marked={markedTurns} onJump={jumpToTurn} />
+                <>
+                  {todos.length > 0 && <TodoSection todos={todos} open={todoOpen} onToggle={() => setTodoOpen((o) => !o)} />}
+                  <Outline turns={turns} activeId={activeId} marked={markedTurns} onJump={jumpToTurn} />
+                </>
               )}
             </aside>
             <div ref={workspace} className={`workspace ${split.dir}`}>
@@ -465,7 +473,7 @@ export default function App() {
               )}
             </div>
           </div>
-          <StatusBar status={hostStatus} stats={stats} git={git} cwd={cwd} todos={todos} onTodos={() => setTab("todos")} />
+          <StatusBar status={hostStatus} stats={stats} git={git} cwd={cwd} todos={todos} onTodos={() => { setTab("outline"); setTodoOpen(true); }} />
           {help && (
             <div className="help" onClick={() => setHelp(false)}>
               <div className="help-card" onClick={(e) => e.stopPropagation()}>
@@ -483,6 +491,7 @@ export default function App() {
           )}
           {toastText && <div className="toast">{toastText}</div>}
         </div>
+      </FoldContext.Provider>
       </RevealContext.Provider>
     </MarksContext.Provider>
     </AskContext.Provider>

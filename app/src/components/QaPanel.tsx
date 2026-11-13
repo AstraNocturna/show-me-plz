@@ -115,21 +115,25 @@ export function QaPanel({ qa, cwd, focusNonce, onClose, onContentClick }: Props)
   return (
     <div className="qa">
       <header className="qa-head">
-        <span className="qa-title">问答</span>
-        <span className="muted qa-model">{qa.model ?? (qa.status === "starting" ? "正在启动子代理（加载扩展，可能要几十秒）…" : "")}</span>
-        {qa.thinking && <span className="muted qa-model" title="思考等级">🧠 {qa.thinking}</span>}
-        {qa.context && (
-          <span className="muted qa-model" title={`子代理上下文：${qa.context.tokens} / ${qa.context.window} tokens`}>
-            🪟 {((qa.context.tokens / qa.context.window) * 100).toFixed(1)}%/{fmt(qa.context.window)}
-          </span>
-        )}
-        <span className="spacer" />
-        {(qa.msgs.length > 0 || exited) && (
-          <button className="copy-btn" onClick={qa.reset} title="结束当前问答，下次提问重新从主会话分出（会包含主会话的最新内容）">
-            新问答
-          </button>
-        )}
-        <button className="toggle" onClick={onClose} title="收起面板（问答保留，关闭窗口才会丢弃）">✕</button>
+        <div className="qa-head-row">
+          <span className="qa-title">问答</span>
+          <span className="spacer" />
+          {(qa.msgs.length > 0 || exited) && (
+            <button className="copy-btn" onClick={qa.reset} title="结束当前问答，下次提问重新从主会话分出（会包含主会话的最新内容）">
+              新问答
+            </button>
+          )}
+          <button className="toggle" onClick={onClose} title="收起面板（问答保留，关闭窗口才会丢弃）">✕</button>
+        </div>
+        <div className="qa-info">
+          <span className="muted qa-model">{qa.model ?? (qa.status === "starting" ? "正在启动子代理（加载扩展，可能要几十秒）…" : "")}</span>
+          {qa.thinking && <span className="muted qa-model" title="思考等级">🧠 {qa.thinking}</span>}
+          {qa.context && (
+            <span className="muted qa-model" title={`子代理上下文：${qa.context.tokens} / ${qa.context.window} tokens`}>
+              🪟 {((qa.context.tokens / qa.context.window) * 100).toFixed(1)}%/{fmt(qa.context.window)}
+            </span>
+          )}
+        </div>
       </header>
       <div
         className="qa-log"

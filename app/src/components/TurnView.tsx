@@ -3,7 +3,9 @@ import { copyText } from "../actions";
 import { AskContext } from "../qa/useQa";
 import { resolvePath } from "../files/fileRef";
 import { MarkButton } from "../marks/marks";
+import { agentKey, useFolded } from "../fold";
 import { useRevealOpen } from "../reveal";
+import { within } from "../session/units";
 import { partKey, stepKey, userKey } from "../session/units";
 import { shownArgs, toolIcon, toolSummary } from "../session/toolSummary";
 import type { ImageContent } from "../session/types";
@@ -231,29 +233,57 @@ function PartView(props: { part: Part; view: ViewOpts; cwd?: string; turnId: str
   }
 }
 
+function firstLine(text: string): string {
+  return text.split(/\r?\n/).find((l) => l.trim())?.trim() ?? "";
+}
+
+function FoldButton({ folded, onClick, what }: { folded: boolean; onClick(): void; what: string }) {
+  return (
+    <button className="fold-btn" onClick={onClick} title={folded ? `展开${what}` : `折叠${what}`} aria-expanded={!folded}>
+      {folded ? "▸" : "▾"}
+    </button>
+  );
+}
+
 export const TurnView = memo(function TurnView({ turn, view, cwd }: { turn: Turn; view: ViewOpts; cwd?: string }) {
   const parts = visibleParts(turn, view);
+  const uKey = userKey(turn.id);
+  const [userFolded, toggleUser] = useFolded(uKey, (k) => within(k, uKey));
+  const [agentFolded, toggleAgent] = useFolded(agentKey(turn.id), (k) => k.startsWith(`${turn.id}:p`));
+  const texts = parts.flatMap(({ item: p }) => (p.kind === "text" ? [p.text] : []));
   return (
     <section className="turn" data-turn-id={turn.id}>
       {turn.user && (
-        <div className="user" data-unit={userKey(turn.id)}>
+        <div className={`user ${userFolded ? "folded" : ""}`} data-unit={userKey(turn.id)}>
           <header className="card-head">
+            <FoldButton folded={userFolded} onClick={toggleUser} what="提问" />
             <MarkButton unitKey={userKey(turn.id)} turnId={turn.id} preview={turn.user.text} />
             <span className="who">你</span>
             <span className="muted">{formatTime(turn.user.timestamp)}</span>
+            {userFolded && <span className="fold-preview">{firstLine(turn.user.text)}</span>}
             <span className="spacer" />
             <button className="copy-btn" onClick={() => void copyText(turn.user!.text)}>复制提问</button>
             <button className="copy-btn" onClick={() => void copyText(answerText(turn))}>复制回答</button>
           </header>
-          <Markdown source={turn.user.text} cwd={cwd} user />
-          <Images images={turn.user.images} />
+          {!userFolded && (
+            <>
+              <Markdown source={turn.user.text} cwd={cwd} user />
+              <Images images={turn.user.images} />
+            </>
+          )}
         </div>
       )}
       {parts.length > 0 ? (
-        <div className="agent">
-          {parts.map(({ item: p, index: i }) => (
-            <PartView key={i} part={p} view={view} cwd={cwd} turnId={turn.id} unit={partKey(turn.id, i)} />
-          ))}
+        <div className={`agent ${agentFolded ? "folded" : ""}`}>
+          <div className="agent-head">
+            <FoldButton folded={agentFolded} onClick={toggleAgent} what="回答" />
+            <span className="who">AI</span>
+            {agentFolded && <span className="fold-preview">{firstLine(texts[texts.length - 1] ?? "") || "（只有过程，没有文字回答）"}</span>}
+          </div>
+          {!agentFolded &&
+            parts.map(({ item: p, index: i }) => (
+              <PartView key={i} part={p} view={view} cwd={cwd} turnId={turn.id} unit={partKey(turn.id, i)} />
+            ))}
         </div>
       ) : (
         !view.interim &&
