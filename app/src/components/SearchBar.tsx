@@ -1,13 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Scope } from "../search/search";
 import type { SearchState } from "../search/useSearch";
-
-const SCOPES: Array<[Scope, string]> = [
-  ["all", "全部"],
-  ["user", "提问"],
-  ["answer", "回答"],
-  ["process", "过程"],
-];
 
 export function SearchBar({ s, focusNonce }: { s: SearchState; focusNonce: number }) {
   const input = useRef<HTMLInputElement>(null);
@@ -51,13 +43,6 @@ export function SearchBar({ s, focusNonce }: { s: SearchState; focusNonce: numbe
       <button className={`toggle ${s.regex ? "on" : ""}`} title="正则表达式" onClick={() => s.setRegex(!s.regex)}>
         .*
       </button>
-      <div className="segmented small">
-        {SCOPES.map(([v, label]) => (
-          <button key={v} className={s.scope === v ? "on" : ""} onClick={() => s.setScope(v)}>
-            {label}
-          </button>
-        ))}
-      </div>
       <span className={`search-status ${s.error || (s.query && !s.hits.length) ? "err" : ""}`}>{status}</span>
       <button className="toggle" title="上一个 (Shift+Enter)" onClick={s.prev}>↑</button>
       <button className="toggle" title="下一个 (Enter)" onClick={s.next}>↓</button>

@@ -51,7 +51,7 @@ test("hiding the process hides thinking and tools together; interim text stays",
 
 test("search only covers what the view shows", () => {
   const count = (q: string, v: typeof DEFAULT_VIEW) =>
-    findHits(buildUnits([turn], undefined, v), makeMatcher(q, { regex: false, caseSensitive: false }) as RegExp, "all").length;
+    findHits(buildUnits([turn], undefined, v), makeMatcher(q, { regex: false, caseSensitive: false }) as RegExp).length;
   assert.equal(count("out c", DEFAULT_VIEW), 2);
   assert.equal(count("let me think", DEFAULT_VIEW), 1);
   assert.equal(count("out c", { ...DEFAULT_VIEW, process: false }), 0);

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import type { ViewOpts } from "../session/view";
 import type { Turn } from "../session/viewModel";
 import { clearHighlights, findUnitEl, paintHighlights, scrollRangeIntoView, scrollToRect, textRanges } from "./dom";
-import { buildUnits, findHits, makeMatcher, MAX_HITS, type Hit, type Scope } from "./search";
+import { buildUnits, findHits, makeMatcher, MAX_HITS, type Hit } from "./search";
 
 const DEBOUNCE = 150;
 const MAX_WAIT_FRAMES = 12;
@@ -12,7 +12,6 @@ export interface SearchState {
   query: string;
   regex: boolean;
   caseSensitive: boolean;
-  scope: Scope;
   hits: Hit[];
   index: number;
   error: string | null;
@@ -21,7 +20,6 @@ export interface SearchState {
   setQuery(q: string): void;
   setRegex(v: boolean): void;
   setCaseSensitive(v: boolean): void;
-  setScope(s: Scope): void;
   next(): void;
   prev(): void;
 }
@@ -43,7 +41,6 @@ export function useSearch({ turns, cwd, view, timeline, activeTurnId, reveal }: 
   const [debounced, setDebounced] = useState("");
   const [regex, setRegex] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
-  const [scope, setScope] = useState<Scope>("all");
   const [index, setIndex] = useState(0);
   const [navNonce, setNavNonce] = useState(0);
 
@@ -58,7 +55,7 @@ export function useSearch({ turns, cwd, view, timeline, activeTurnId, reveal }: 
     [open, debounced, regex, caseSensitive],
   );
   const re = matcher instanceof RegExp ? matcher : null;
-  const hits = useMemo(() => (re ? findHits(units, re, scope) : []), [units, re, scope]);
+  const hits = useMemo(() => (re ? findHits(units, re) : []), [units, re]);
 
   // New query/options: start at the first hit at or after the turn being read. Not on new entries.
   const hitsRef = useRef(hits);
@@ -72,7 +69,7 @@ export function useSearch({ turns, cwd, view, timeline, activeTurnId, reveal }: 
     setIndex(Math.max(0, i));
     setNavNonce((n) => n + 1);
     // `turns` intentionally omitted: new entries must not reset the position.
-  }, [re, scope]);
+  }, [re]);
 
   const paint = useCallback(
     (scroll: boolean) => {
@@ -148,7 +145,6 @@ export function useSearch({ turns, cwd, view, timeline, activeTurnId, reveal }: 
     query,
     regex,
     caseSensitive,
-    scope,
     hits,
     index,
     error: typeof matcher === "string" ? matcher : null,
@@ -157,7 +153,6 @@ export function useSearch({ turns, cwd, view, timeline, activeTurnId, reveal }: 
     setQuery,
     setRegex,
     setCaseSensitive,
-    setScope,
     next: () => step(1),
     prev: () => step(-1),
   };

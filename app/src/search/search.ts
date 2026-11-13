@@ -4,7 +4,6 @@ import type { Turn } from "../session/viewModel";
 import { DEFAULT_VIEW, visibleParts, visibleSteps, type ViewOpts } from "../session/view.ts";
 
 export type UnitKind = "user" | "answer" | "process";
-export type Scope = "all" | UnitKind;
 
 export interface Unit {
   key: string;
@@ -81,10 +80,9 @@ export function* matches(re: RegExp, text: string): Generator<RegExpExecArray> {
   }
 }
 
-export function findHits(units: Unit[], re: RegExp, scope: Scope): Hit[] {
+export function findHits(units: Unit[], re: RegExp): Hit[] {
   const hits: Hit[] = [];
   for (const u of units) {
-    if (scope !== "all" && u.kind !== scope) continue;
     let ordinal = 0;
     for (const _ of matches(re, u.text)) {
       hits.push({ unitKey: u.key, turnId: u.turnId, ordinal: ordinal++ });
