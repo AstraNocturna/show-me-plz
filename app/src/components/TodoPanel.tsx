@@ -25,7 +25,7 @@ export function TodoSection({ todos, open, onToggle }: { todos: Todo[]; open: bo
   const done = of("completed");
   return (
     <section className="todo-section">
-      <button className="todo-head" onClick={onToggle} aria-expanded={open} title={open ? "折叠待办" : "展开待办"}>
+      <button className="side-head" onClick={onToggle} aria-expanded={open} title={open ? "折叠待办" : "展开待办"}>
         <span className="caret">{open ? "▾" : "▸"}</span>
         <span>待办 · {done.length}/{todos.length}</span>
         {!open && doing[0] && <span className="fold-preview">{doing[0].activeForm ?? doing[0].subject}</span>}

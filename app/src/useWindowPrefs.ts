@@ -2,8 +2,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "./actions";
-
-export type ThemePref = "auto" | "light" | "dark";
+import { isTheme, paletteOf, schemeOf, type ThemePref } from "./prefs/themes";
 
 const ZOOM_KEY = "smp.zoom";
 const THEME_KEY = "smp.theme";
@@ -20,12 +19,12 @@ function loadZoom(): number {
 
 function loadTheme(): ThemePref {
   const t = localStorage.getItem(THEME_KEY);
-  return t === "light" || t === "dark" ? t : "auto";
+  return isTheme(t) ? t : "auto";
 }
 
 /**
  * Window-level preferences persisted across launches: Ctrl+wheel zoom (also Ctrl+0 / Ctrl+= / Ctrl+-),
- * light/dark theme and always-on-top.
+ * color theme and always-on-top.
  */
 export function useWindowPrefs() {
   const [zoom, setZoom] = useState(loadZoom);
@@ -59,15 +58,22 @@ export function useWindowPrefs() {
     // system theme from the window rather than prefers-color-scheme: once setTheme("light"|"dark") has run,
     // WebView2 keeps that scheme even after setTheme(null).
     const win = getCurrentWindow();
-    const apply = (t: "light" | "dark" | null) => (document.documentElement.dataset.theme = t ?? "light");
+    const apply = (t: "light" | "dark" | null) => {
+      const root = document.documentElement;
+      root.dataset.theme = t ?? "light";
+      const palette = paletteOf(theme);
+      if (palette) root.dataset.palette = palette;
+      else delete root.dataset.palette;
+    };
+    const scheme = schemeOf(theme);
     let cancelled = false;
     let unlisten: (() => void) | undefined;
     win
-      .setTheme(theme === "auto" ? null : theme)
-      .then(() => (theme === "auto" ? win.theme() : theme))
+      .setTheme(scheme)
+      .then(() => scheme ?? win.theme())
       .then((t) => !cancelled && apply(t))
       .catch(console.error);
-    if (theme === "auto")
+    if (!scheme)
       win
         .onThemeChanged(({ payload }) => apply(payload))
         .then((u) => (cancelled ? u() : (unlisten = u)))
@@ -110,7 +116,6 @@ export function useWindowPrefs() {
     };
   }, [stepZoom, resetZoom]);
 
-  const cycleTheme = useCallback(() => setTheme((t) => (t === "auto" ? "light" : t === "light" ? "dark" : "auto")), []);
   const toggleOnTop = useCallback(() => setOnTop((v) => !v), []);
-  return { zoom, stepZoom, resetZoom, theme, cycleTheme, onTop, toggleOnTop };
+  return { zoom, stepZoom, resetZoom, theme, setTheme, onTop, toggleOnTop };
 }

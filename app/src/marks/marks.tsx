@@ -9,6 +9,8 @@ export interface Mark {
   key: string;
   turnId: string;
   preview: string;
+  /** A title the user gave the bookmark; shown instead of the preview text. */
+  name?: string;
   note: string;
   color: number;
   createdAt: number;
@@ -23,7 +25,7 @@ export interface MarksApi {
   marks: Mark[];
   has(key: string): boolean;
   toggle(m: Pick<Mark, "key" | "turnId" | "preview">): void;
-  update(key: string, patch: Partial<Pick<Mark, "note" | "color">>): void;
+  update(key: string, patch: Partial<Pick<Mark, "name" | "note" | "color">>): void;
   remove(key: string): void;
 }
 

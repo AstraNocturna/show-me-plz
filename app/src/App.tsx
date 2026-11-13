@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { handleContentClick, TOAST_EVENT } from "./actions";
+import { copyText, handleContentClick, TOAST_EVENT } from "./actions";
+import { AppearanceMenu } from "./components/AppearanceMenu";
+import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { FilePreview } from "./components/FilePreview";
 import { Markers, type MarkerSpec } from "./components/Markers";
-import { MarksPanel, sortMarks } from "./components/MarksPanel";
+import { markTitle, MarksPanel, sortMarks } from "./components/MarksPanel";
 import { Outline } from "./components/Outline";
 import { StatusBar } from "./components/StatusBar";
 import { TodoSection } from "./components/TodoPanel";
@@ -12,6 +14,8 @@ import { SearchBar } from "./components/SearchBar";
 import { TurnView } from "./components/TurnView";
 import { ViewMenu } from "./components/ViewMenu";
 import { MARK_COLORS, MarksContext, useMarks, type Mark } from "./marks/marks";
+import { markableKeyAt, markTarget } from "./marks/target";
+import { useAppearance } from "./prefs/appearance";
 import type { FileRef } from "./files/fileRef";
 import { agentKey, FoldContext, useFoldState } from "./fold";
 import { AskContext, useQa } from "./qa/useQa";
@@ -27,7 +31,7 @@ import { useGit, useHostStatus } from "./session/useHostStatus";
 import { useSession } from "./session/useSession";
 import { buildTurns } from "./session/viewModel";
 import { useSplit } from "./useSplit";
-import { useWindowPrefs, type ThemePref } from "./useWindowPrefs";
+import { useWindowPrefs } from "./useWindowPrefs";
 import "./styles.css";
 
 const VIEW_KEY = "smp.view";
@@ -60,12 +64,6 @@ const SHORTCUTS: Array<[string, string]> = [
   ["?", "显示/隐藏本帮助"],
 ];
 
-const THEME_LABEL: Record<ThemePref, [string, string]> = {
-  auto: ["◐", "主题：跟随系统"],
-  light: ["☀", "主题：浅色"],
-  dark: ["☾", "主题：深色"],
-};
-
 function isTyping(e: KeyboardEvent): boolean {
   const t = e.target as HTMLElement | null;
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
@@ -77,6 +75,9 @@ export default function App() {
   const [view, setView] = useState<ViewOpts>(loadView);
   const [tab, setTab] = useState<"outline" | "marks">("outline");
   const [todoOpen, setTodoOpen] = useState(true);
+  const [outlineOpen, setOutlineOpen] = useState(true);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [renameReq, setRenameReq] = useState<Reveal | null>(null);
   const [activeId, setActiveId] = useState<string>();
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
@@ -91,6 +92,7 @@ export default function App() {
   const workspace = useRef<HTMLDivElement>(null);
   const split = useSplit(workspace);
   const prefs = useWindowPrefs();
+  const look = useAppearance();
 
   const header = useMemo(() => session.entries.find((e) => e.type === "session"), [session.entries]);
   const cwd = typeof header?.cwd === "string" ? header.cwd : undefined;
@@ -262,6 +264,63 @@ export default function App() {
     };
   }, [jumpToTurn, jumpToMark, scrollToBottom, marks.toggle]);
 
+  // Right-click on the conversation: copy / ask for a selection, and the bookmark actions for what is under the cursor.
+  const onContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest("input, textarea, a[href]")) return; // keep the native menu where it is more useful
+      e.preventDefault();
+      const s = stateRef.current;
+      const selected = window.getSelection()?.toString().trim() ?? "";
+      const key = markableKeyAt(el);
+      const target = key ? markTarget(s.turns, key) : null;
+      const marked = target ? marks.has(target.key) : false;
+      const turnId = el.closest<HTMLElement>("[data-turn-id]")?.dataset.turnId;
+      const box = turnId ? (el.closest(".user") ? userKey(turnId) : el.closest(".agent") ? agentKey(turnId) : null) : null;
+      const items: MenuItem[] = [];
+      if (selected) {
+        items.push(
+          { kind: "item", label: "复制", onClick: () => void copyText(selected) },
+          { kind: "item", label: "💬 问 AI（引用选中内容）", onClick: () => ask(selected) },
+          { kind: "sep" },
+        );
+      }
+      if (target) {
+        items.push(
+          { kind: "item", label: marked ? "★ 取消书签" : "☆ 加书签", onClick: () => marks.toggle(target) },
+          {
+            kind: "item",
+            label: "✎ 命名书签…",
+            onClick: () => {
+              if (!marked) marks.toggle(target);
+              setTab("marks");
+              setRenameReq((r) => ({ key: target.key, nonce: (r?.nonce ?? 0) + 1 }));
+            },
+          },
+        );
+      }
+      items.push(
+        { kind: "heading", label: "跳转到书签" },
+        { kind: "item", label: "⤴ 上一个书签", onClick: () => nav.mark(-1), disabled: !s.sortedMarks.length },
+        { kind: "item", label: "⤵ 下一个书签", onClick: () => nav.mark(1), disabled: !s.sortedMarks.length },
+        {
+          kind: "list",
+          empty: "（还没有书签）",
+          entries: s.sortedMarks.map((m) => ({ label: markTitle(m), color: MARK_COLORS[m.color], onClick: () => jumpToMark(m) })),
+        },
+      );
+      if (box) {
+        items.push(
+          { kind: "sep" },
+          { kind: "item", label: folds.isFolded(box) ? "▸ 展开这一块" : "▾ 折叠这一块", onClick: () => folds.toggle(box) },
+        );
+      }
+      setMenu({ x: e.clientX, y: e.clientY, items });
+    },
+    [ask, folds, jumpToMark, marks, nav],
+  );
+  const closeMenu = useCallback(() => setMenu(null), []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = stateRef.current;
@@ -381,9 +440,7 @@ export default function App() {
               <button onClick={prefs.resetZoom} title="还原到 100%">{Math.round(prefs.zoom * 100)}%</button>
               <button onClick={() => prefs.stepZoom(1)} title="放大（Ctrl+滚轮同样可用）">+</button>
             </div>
-            <button className="toggle" title={`${THEME_LABEL[prefs.theme][1]}（点击切换）`} onClick={prefs.cycleTheme}>
-              {THEME_LABEL[prefs.theme][0]}
-            </button>
+            <AppearanceMenu theme={prefs.theme} onTheme={prefs.setTheme} appearance={look.appearance} onChange={look.update} onReset={look.reset} />
             <button className={`toggle ${prefs.onTop ? "on" : ""}`} title={prefs.onTop ? "取消置顶" : "窗口置顶"} onClick={prefs.toggleOnTop}>
               📌
             </button>
@@ -403,11 +460,17 @@ export default function App() {
                 </button>
               </div>
               {tab === "marks" ? (
-                <MarksPanel api={marks} sorted={sortedMarks} turnOrder={turnOrder} onJump={jumpToMark} />
+                <MarksPanel api={marks} sorted={sortedMarks} turnOrder={turnOrder} onJump={jumpToMark} rename={renameReq} />
               ) : (
                 <>
                   {todos.length > 0 && <TodoSection todos={todos} open={todoOpen} onToggle={() => setTodoOpen((o) => !o)} />}
-                  <Outline turns={turns} activeId={activeId} marked={markedTurns} onJump={jumpToTurn} />
+                  <section className={`outline-section ${outlineOpen ? "open" : ""}`}>
+                    <button className="side-head" onClick={() => setOutlineOpen((o) => !o)} aria-expanded={outlineOpen} title={outlineOpen ? "折叠提问列表" : "展开提问列表"}>
+                      <span className="caret">{outlineOpen ? "▾" : "▸"}</span>
+                      <span>提问列表 · {turns.filter((t) => t.user).length}</span>
+                    </button>
+                    {outlineOpen && <Outline turns={turns} activeId={activeId} marked={markedTurns} onJump={jumpToTurn} />}
+                  </section>
                 </>
               )}
             </aside>
@@ -415,7 +478,7 @@ export default function App() {
               <div className="main" style={side ? { flex: `0 0 ${split.ratio * 100}%` } : undefined}>
                 {search.open && <SearchBar s={search} focusNonce={searchFocus} />}
                 <div className="timeline-wrap">
-                  <main className="timeline" ref={timeline} onScroll={onScroll} onClick={(e) => handleContentClick(e, setLightbox, setPreview)}>
+                  <main className="timeline" ref={timeline} onScroll={onScroll} onContextMenu={onContextMenu} onClick={(e) => handleContentClick(e, setLightbox, setPreview)}>
                     <div className="timeline-inner">
                       {turns.length === 0 && <div className="empty">暂无对话</div>}
                       {turns.map((t) => (
@@ -490,6 +553,7 @@ export default function App() {
             </div>
           )}
           {toastText && <div className="toast">{toastText}</div>}
+          {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />}
         </div>
       </FoldContext.Provider>
       </RevealContext.Provider>
