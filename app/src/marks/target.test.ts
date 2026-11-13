@@ -5,7 +5,7 @@ import type { Turn } from "../session/viewModel.ts";
 
 const turn = {
   id: "t1",
-  user: { text: "问题", images: [] },
+  user: { text: "问题", label: "问题", images: [] },
   parts: [
     { kind: "process", steps: [] },
     { kind: "text", text: "最终回答" },

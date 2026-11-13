@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "../actions";
+import { PREVIEW_MAX } from "./target";
 
 export const MARK_COLORS = ["#e3b341", "#f85149", "#3fb950", "#4493f8"] as const;
 
@@ -21,10 +22,19 @@ interface MarksFile {
   marks: Mark[];
 }
 
+export type MarkTarget = Pick<Mark, "key" | "turnId" | "preview">;
+
 export interface MarksApi {
   marks: Mark[];
   has(key: string): boolean;
-  toggle(m: Pick<Mark, "key" | "turnId" | "preview">): void;
+  /** Removes the bookmark if there is one; otherwise starts adding it, which waits for `commit` (the name is asked first). */
+  toggle(m: MarkTarget): void;
+  /** The bookmark being added, waiting for its name. */
+  pending: MarkTarget | null;
+  /** Adds the pending bookmark with this name (blank: it is titled by the start of its text). */
+  commit(name: string): void;
+  /** Drops the pending bookmark without adding it. */
+  cancel(): void;
   update(key: string, patch: Partial<Pick<Mark, "name" | "note" | "color">>): void;
   remove(key: string): void;
 }
@@ -36,12 +46,18 @@ const serialize = (marks: Mark[]) => JSON.stringify({ version: 1, marks } satisf
 /** Bookmarks for one session, persisted by the backend in the app data dir (not in pi's session). */
 export function useMarks(sessionId: string | undefined): MarksApi {
   const [marks, setMarks] = useState<Mark[]>([]);
+  const [pending, setPending] = useState<MarkTarget | null>(null);
+  const marksRef = useRef(marks);
+  marksRef.current = marks;
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
   const loadedFor = useRef<string | undefined>(undefined);
   const lastWritten = useRef<string | null>(null);
 
   useEffect(() => {
     loadedFor.current = undefined;
     setMarks([]);
+    setPending(null);
     if (!sessionId) return;
     let cancelled = false;
     invoke<string | null>("load_marks", { sessionId })
@@ -73,18 +89,27 @@ export function useMarks(sessionId: string | undefined): MarksApi {
 
   const has = useCallback((key: string) => marks.some((m) => m.key === key), [marks]);
   const toggle = useCallback<MarksApi["toggle"]>((m) => {
+    if (marksRef.current.some((x) => x.key === m.key)) setMarks((ms) => ms.filter((x) => x.key !== m.key));
+    else setPending(m);
+  }, []);
+  const commit = useCallback((name: string) => {
+    const m = pendingRef.current;
+    if (!m) return;
+    const named = name.trim();
+    setPending(null);
     setMarks((ms) =>
       ms.some((x) => x.key === m.key)
-        ? ms.filter((x) => x.key !== m.key)
-        : [...ms, { ...m, note: "", color: 0, createdAt: Date.now() }],
+        ? ms
+        : [...ms, { ...m, ...(named ? { name: named } : {}), note: "", color: 0, createdAt: Date.now() }],
     );
   }, []);
+  const cancel = useCallback(() => setPending(null), []);
   const update = useCallback<MarksApi["update"]>((key, patch) => {
     setMarks((ms) => ms.map((x) => (x.key === key ? { ...x, ...patch } : x)));
   }, []);
   const remove = useCallback((key: string) => setMarks((ms) => ms.filter((x) => x.key !== key)), []);
 
-  return { marks, has, toggle, update, remove };
+  return { marks, has, toggle, pending, commit, cancel, update, remove };
 }
 
 export const MarksContext = createContext<MarksApi | null>(null);
@@ -99,7 +124,7 @@ export function MarkButton({ unitKey, turnId, preview }: { unitKey: string; turn
       className={`mark-btn ${marked ? "on" : ""}`}
       style={color ? { color } : undefined}
       title={marked ? "取消书签 (m)" : "加书签 (m)"}
-      onClick={() => api.toggle({ key: unitKey, turnId, preview: preview.slice(0, 200) })}
+      onClick={() => api.toggle({ key: unitKey, turnId, preview: preview.slice(0, PREVIEW_MAX) })}
     >
       {marked ? "★" : "☆"}
     </button>

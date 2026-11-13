@@ -5,6 +5,7 @@
 //! directory on every tool call. It never touches the main session itself. The fork lives in a throwaway
 //! directory that is removed when the thread ends or the viewer exits.
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -27,7 +28,6 @@ const STALE_AFTER: Duration = Duration::from_secs(24 * 3600);
 const STDERR_TAIL: usize = 4000;
 
 struct Thread {
-    id: u64,
     child: Child,
     stdin: ChildStdin,
     dir: PathBuf,
@@ -43,11 +43,12 @@ struct Launch {
     guard: Option<String>,
 }
 
-/// The launch recipe and the one live thread.
+/// The launch recipe and the live threads: the Q&A panel's, and the one that suggests bookmark names.
+/// Each is its own fork of the session, told apart by the `id` the frontend picked.
 #[derive(Default)]
 pub struct Qa {
     launch: Option<Launch>,
-    current: Option<Thread>,
+    threads: HashMap<u64, Thread>,
 }
 
 pub type SharedQa = Arc<Mutex<Qa>>;
@@ -73,12 +74,20 @@ impl Qa {
         self.launch = Some(Launch { node, cli, args, guard });
     }
 
-    /// Ends the live thread and discards its fork.
-    pub fn stop(&mut self) {
-        if let Some(mut t) = self.current.take() {
+    /// Ends one thread and discards its fork.
+    pub fn stop(&mut self, id: u64) {
+        if let Some(mut t) = self.threads.remove(&id) {
             let _ = t.child.kill();
             let _ = t.child.wait();
             let _ = std::fs::remove_dir_all(&t.dir);
+        }
+    }
+
+    /// Ends every thread (the viewer is closing).
+    pub fn stop_all(&mut self) {
+        let ids: Vec<u64> = self.threads.keys().copied().collect();
+        for id in ids {
+            self.stop(id);
         }
     }
 
@@ -104,7 +113,7 @@ fn spawn_thread(
     allow_write: bool,
 ) -> Result<mpsc::Receiver<Result<(), String>>, String> {
     let mut q = qa.lock().unwrap();
-    q.stop();
+    q.stop(id);
     let launch = q.launch.clone().ok_or("还不知道 pi 的位置：请在 pi 里执行 /viewer 后再试")?;
     // Without the guard the fork would have write tools and nothing holding them back.
     let guard = launch.guard.clone().ok_or("拦截扩展的位置未知：请在 pi 里先 /reload 再执行 /viewer")?;
@@ -190,11 +199,11 @@ fn spawn_thread(
         let _ = app.emit("qa-exit", QaExit { id, stderr });
     });
 
-    q.current = Some(Thread { id, child, stdin, dir });
+    q.threads.insert(id, Thread { child, stdin, dir });
     Ok(rx)
 }
 
-/// Starts a new thread (ending any previous one) and returns once the forked pi is up and the guard is
+/// Starts a new thread and returns once the forked pi is up and the guard is
 /// confirmed loaded. `id` comes from the frontend so it can match events that arrive before this returns.
 #[tauri::command]
 pub async fn qa_start(
@@ -215,10 +224,7 @@ pub async fn qa_start(
         Err(RecvTimeoutError::Timeout) => format!("子代理 {} 秒内没有启动完成", READY_TIMEOUT.as_secs()),
         Err(RecvTimeoutError::Disconnected) => "子代理启动时就退出了".into(),
     };
-    let mut q = qa.lock().unwrap();
-    if q.current.as_ref().is_some_and(|t| t.id == id) {
-        q.stop();
-    }
+    qa.lock().unwrap().stop(id);
     Err(why)
 }
 
@@ -226,7 +232,7 @@ pub async fn qa_start(
 #[tauri::command]
 pub fn qa_set_write(qa: State<'_, SharedQa>, id: u64, allow: bool) -> Result<(), String> {
     let q = qa.lock().unwrap();
-    let t = q.current.as_ref().filter(|t| t.id == id).ok_or("问答已结束")?;
+    let t = q.threads.get(&id).ok_or("问答已结束")?;
     // Written, never deleted: see extension/qa-guard.ts for why the content is what counts.
     std::fs::write(t.dir.join(ALLOW_WRITE), if allow { "1" } else { "0" }).map_err(|e| format!("切换失败：{e}"))
 }
@@ -235,7 +241,7 @@ pub fn qa_set_write(qa: State<'_, SharedQa>, id: u64, allow: bool) -> Result<(),
 #[tauri::command]
 pub fn qa_send(qa: State<'_, SharedQa>, id: u64, command: Value) -> Result<(), String> {
     let mut q = qa.lock().unwrap();
-    let t = q.current.as_mut().filter(|t| t.id == id).ok_or("问答已结束，请开始新的问答")?;
+    let t = q.threads.get_mut(&id).ok_or("问答已结束，请开始新的问答")?;
     let line = serde_json::to_string(&command).map_err(|e| e.to_string())? + "\n";
     t.stdin
         .write_all(line.as_bytes())
@@ -245,8 +251,5 @@ pub fn qa_send(qa: State<'_, SharedQa>, id: u64, command: Value) -> Result<(), S
 
 #[tauri::command]
 pub fn qa_stop(qa: State<'_, SharedQa>, id: u64) {
-    let mut q = qa.lock().unwrap();
-    if q.current.as_ref().is_some_and(|t| t.id == id) {
-        q.stop();
-    }
+    qa.lock().unwrap().stop(id);
 }

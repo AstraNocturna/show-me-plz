@@ -84,3 +84,17 @@ test("tool summaries show cwd-relative paths and the key argument", async () => 
   assert.equal(toolSummary(call("read", { path: "C:/other/b.ts" }), "D:\\proj"), "C:/other/b.ts");
   assert.equal(toolSummary(call("bash", { command: "pnpm test\necho done" })), "pnpm test");
 });
+
+test("a skill invocation keeps the SKILL.md out of the prompt text and labels the turn /skill:name", () => {
+  const body = "References are relative to C:\s.\n\n# REA";
+  const entries = [
+    { type: "message", id: "u1", message: { role: "user", content: `<skill name="rea" location="C:\s\SKILL.md">\n${body}\n</skill>\n\n看这个 exe` } },
+    { type: "message", id: "u2", message: { role: "user", content: `<skill name="rea" location="C:\s\SKILL.md">\n${body}\n</skill>` } },
+  ] as SessionEntry[];
+  const [a, b] = buildTurns(entries);
+  assert.equal(a.user?.text, "看这个 exe");
+  assert.equal(a.user?.label, "/skill:rea 看这个 exe");
+  assert.equal(a.user?.skill?.body, body);
+  assert.equal(b.user?.text, "");
+  assert.equal(b.user?.label, "/skill:rea");
+});

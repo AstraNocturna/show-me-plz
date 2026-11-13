@@ -34,7 +34,7 @@ export const MAX_HITS = 5000;
 export function buildUnits(turns: Turn[], cwd?: string, view: ViewOpts = DEFAULT_VIEW): Unit[] {
   const units: Unit[] = [];
   for (const t of turns) {
-    if (t.user) units.push({ key: userKey(t.id), turnId: t.id, kind: "user", text: t.user.text });
+    if (t.user) units.push({ key: userKey(t.id), turnId: t.id, kind: "user", text: t.user.label });
     visibleParts(t, view).forEach(({ item: p, index: i }) => {
       const key = partKey(t.id, i);
       if (p.kind === "text" || p.kind === "error") units.push({ key, turnId: t.id, kind: "answer", text: p.text });

@@ -15,11 +15,13 @@ import { SearchBar } from "./components/SearchBar";
 import { TurnView } from "./components/TurnView";
 import { ViewMenu } from "./components/ViewMenu";
 import { MARK_COLORS, MarksContext, useMarks, type Mark } from "./marks/marks";
-import { markableKeyAt, markTarget } from "./marks/target";
+import { markableKeyAt, markTarget, PREVIEW_MAX } from "./marks/target";
 import { useAppearance } from "./prefs/appearance";
 import type { FileRef } from "./files/fileRef";
 import { agentKey, FoldContext, useFoldState } from "./fold";
 import { AskContext, useQa } from "./qa/useQa";
+import { useNamer } from "./marks/useNamer";
+import { NameMarkDialog } from "./components/NameMarkDialog";
 import { RevealContext, type Reveal } from "./reveal";
 import { findUnitEl } from "./search/dom";
 import { useSearch } from "./search/useSearch";
@@ -115,6 +117,7 @@ export default function App() {
   const markedTurns = useMemo(() => new Set(marks.marks.map((m) => m.turnId)), [marks.marks]);
   const search = useSearch({ turns, cwd, view, timeline, activeTurnId: activeId, reveal: revealKey });
   const qa = useQa(session.file, cwd);
+  const namer = useNamer(session.file, cwd);
   const { setQuote } = qa;
   const ask = useCallback(
     (quote: string) => {
@@ -254,7 +257,7 @@ export default function App() {
       bottom: scrollToBottom,
       toggleMark() {
         const t = s().turns[idx()];
-        if (t?.user) marks.toggle({ key: userKey(t.id), turnId: t.id, preview: t.user.text.slice(0, 200) });
+        if (t?.user) marks.toggle({ key: userKey(t.id), turnId: t.id, preview: t.user.label.slice(0, PREVIEW_MAX) });
       },
       mark(dir: 1 | -1) {
         const i = idx();
@@ -288,16 +291,17 @@ export default function App() {
       }
       if (target) {
         items.push(
-          { kind: "item", label: marked ? "★ 取消书签" : "☆ 加书签", onClick: () => marks.toggle(target) },
-          {
-            kind: "item",
-            label: "✎ 命名书签…",
-            onClick: () => {
-              if (!marked) marks.toggle(target);
-              setTab("marks");
-              setRenameReq((r) => ({ key: target.key, nonce: (r?.nonce ?? 0) + 1 }));
-            },
-          },
+          { kind: "item", label: marked ? "★ 取消书签" : "☆ 加书签…", onClick: () => marks.toggle(target) },
+          ...(marked
+            ? [{
+                kind: "item" as const,
+                label: "✎ 命名书签…",
+                onClick: () => {
+                  setTab("marks");
+                  setRenameReq((r) => ({ key: target.key, nonce: (r?.nonce ?? 0) + 1 }));
+                },
+              }]
+            : []),
         );
       }
       items.push(
@@ -555,6 +559,9 @@ export default function App() {
             </div>
           )}
           {toastText && <div className="toast">{toastText}</div>}
+          {marks.pending && (
+            <NameMarkDialog key={marks.pending.key} target={marks.pending} onCommit={marks.commit} onCancel={marks.cancel} suggest={namer.suggest} />
+          )}
           {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />}
         </div>
       </FoldContext.Provider>

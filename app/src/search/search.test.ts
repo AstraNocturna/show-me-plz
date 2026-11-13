@@ -7,7 +7,7 @@ import type { Turn } from "../session/viewModel.ts";
 const turns: Turn[] = [
   {
     id: "t1",
-    user: { entryId: "t1", text: "Fix the Parser bug", images: [] },
+    user: { entryId: "t1", text: "Fix the Parser bug", label: "Fix the Parser bug", images: [] },
     parts: [
       {
         kind: "process",

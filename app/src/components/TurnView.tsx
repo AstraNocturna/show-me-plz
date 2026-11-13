@@ -15,6 +15,20 @@ import { Markdown } from "./Markdown";
 
 const MAX_RESULT_CHARS = 20000;
 
+/** A skill the user invoked: a one-line chip, with the SKILL.md pi inlined behind a toggle. */
+function SkillBlock({ skill, cwd }: { skill: NonNullable<Turn["user"]>["skill"] & object; cwd?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="skill-block">
+      <button className="skill-chip" onClick={() => setOpen(!open)} title={skill.location}>
+        <span>🧩 技能 · {skill.name}</span>
+        <span className="muted">{open ? "▾ 收起技能说明" : "▸ 展开技能说明"}</span>
+      </button>
+      {open && <Markdown source={skill.body} cwd={cwd} />}
+    </div>
+  );
+}
+
 function Images({ images }: { images: ImageContent[] }) {
   if (!images.length) return null;
   return (
@@ -257,17 +271,18 @@ export const TurnView = memo(function TurnView({ turn, view, cwd }: { turn: Turn
         <div className={`user ${userFolded ? "folded" : ""}`} data-unit={userKey(turn.id)}>
           <header className="card-head">
             <FoldButton folded={userFolded} onClick={toggleUser} what="提问" />
-            <MarkButton unitKey={userKey(turn.id)} turnId={turn.id} preview={turn.user.text} />
+            <MarkButton unitKey={userKey(turn.id)} turnId={turn.id} preview={turn.user.label} />
             <span className="who">你</span>
             <span className="muted">{formatTime(turn.user.timestamp)}</span>
-            {userFolded && <span className="fold-preview">{firstLine(turn.user.text)}</span>}
+            {userFolded && <span className="fold-preview">{firstLine(turn.user.label)}</span>}
             <span className="spacer" />
-            <button className="copy-btn" onClick={() => void copyText(turn.user!.text)}>复制提问</button>
+            <button className="copy-btn" onClick={() => void copyText(turn.user!.label)}>复制提问</button>
             <button className="copy-btn" onClick={() => void copyText(answerText(turn))}>复制回答</button>
           </header>
           {!userFolded && (
             <>
-              <Markdown source={turn.user.text} cwd={cwd} user />
+              {turn.user.skill && <SkillBlock skill={turn.user.skill} cwd={cwd} />}
+              {turn.user.text && <Markdown source={turn.user.text} cwd={cwd} user />}
               <Images images={turn.user.images} />
             </>
           )}

@@ -1,15 +1,18 @@
 import { userKey } from "../session/units.ts";
 import type { Turn } from "../session/viewModel.ts";
 
+/** How much of the marked text a bookmark keeps: shown as its title, and given to the model to name it. */
+export const PREVIEW_MAX = 600;
+
 /** What a bookmark on `unitKey` would point at: a user prompt or a text part of an answer; null for anything else. */
 export function markTarget(turns: Turn[], unitKey: string): { key: string; turnId: string; preview: string } | null {
   for (const t of turns) {
-    if (unitKey === userKey(t.id)) return t.user ? { key: unitKey, turnId: t.id, preview: t.user.text.slice(0, 200) } : null;
+    if (unitKey === userKey(t.id)) return t.user ? { key: unitKey, turnId: t.id, preview: t.user.label.slice(0, PREVIEW_MAX) } : null;
     const prefix = `${t.id}:p`;
     const index = unitKey.slice(prefix.length);
     if (!unitKey.startsWith(prefix) || !/^[0-9]+$/.test(index)) continue;
     const part = t.parts[Number(index)];
-    return part?.kind === "text" ? { key: unitKey, turnId: t.id, preview: part.text.slice(0, 200) } : null;
+    return part?.kind === "text" ? { key: unitKey, turnId: t.id, preview: part.text.slice(0, PREVIEW_MAX) } : null;
   }
   return null;
 }

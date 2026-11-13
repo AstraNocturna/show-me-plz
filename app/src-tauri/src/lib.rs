@@ -203,7 +203,7 @@ pub fn run() {
         .run(move |_, event| {
             // Closing the window discards the side-question thread and its fork.
             if let RunEvent::Exit = event {
-                qa.lock().unwrap().stop();
+                qa.lock().unwrap().stop_all();
             }
         });
 }

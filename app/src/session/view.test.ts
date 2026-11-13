@@ -15,7 +15,7 @@ const meta: Step = { kind: "meta", entryId: "m", text: "模型 → x/y" };
 
 const turn: Turn = {
   id: "t",
-  user: { entryId: "t", text: "question", images: [] },
+  user: { entryId: "t", text: "question", label: "question", images: [] },
   parts: [
     { kind: "text", entryId: "a", text: "Let me look." },
     { kind: "process", entryId: "b", steps: [thinking, tool("c1")] },

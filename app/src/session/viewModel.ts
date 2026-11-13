@@ -1,3 +1,4 @@
+import { parseSkillMessage, promptLabel, type SkillInvocation } from "./skill.ts";
 import type { ContentBlock, ImageContent, SessionEntry } from "./types";
 
 export interface ToolResultView {
@@ -34,7 +35,12 @@ export type Part =
 
 export interface UserView {
   entryId: string;
+  /** What the user typed; for a skill invocation, only what followed the skill name. */
   text: string;
+  /** Set when the message invokes a skill (`/skill:name`): the inlined SKILL.md is kept here, out of `text`. */
+  skill?: Omit<SkillInvocation, "args">;
+  /** One line standing for the prompt in lists, previews and copies (see `promptLabel`). */
+  label: string;
   images: ImageContent[];
   timestamp?: string;
 }
@@ -91,9 +97,13 @@ export function buildTurns(branch: SessionEntry[]): Turn[] {
         if (!m) break;
         const blocks = toBlocks(m.content);
         if (m.role === "user") {
+          const typed = joinText(blocks);
+          const invoked = parseSkillMessage(typed);
+          const text = invoked ? invoked.args : typed;
+          const skill = invoked ? { name: invoked.name, location: invoked.location, body: invoked.body } : undefined;
           cur = {
             id,
-            user: { entryId: id, text: joinText(blocks), images: images(blocks), timestamp: e.timestamp },
+            user: { entryId: id, text, skill, label: promptLabel(text, skill), images: images(blocks), timestamp: e.timestamp },
             parts: [],
           };
           turns.push(cur);
