@@ -264,6 +264,16 @@ pre.diff > .gap { color: var(--muted); }
   font-family: var(--mono); font-size: 13px; line-height: 1.5;
 }
 .code-block pre code { font-family: inherit; }
+/* mermaid: the diagram replaces the source; the head button flips between them */
+.code-block [data-toggle-diagram] { display: none; margin-left: auto; margin-right: 6px; }
+.code-block.diagram-ok [data-toggle-diagram] { display: inline-block; }
+.code-block.diagram-ok > pre { display: none; }
+.code-block.diagram-ok.show-source > pre { display: block; }
+.code-block.diagram-ok.show-source > .diagram { display: none; }
+.diagram { padding: 12px; overflow-x: auto; text-align: center; background: #fff; color: #24292f; }
+.diagram svg { max-width: 100%; height: auto; }
+/* KaTeX: inline stays in the text flow, display math is its own scrollable line */
+.math.display { display: block; margin: 0.6em 0; overflow-x: auto; text-align: center; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) :is(.shiki, .shiki span) { color: var(--shiki-dark) !important; }
 }

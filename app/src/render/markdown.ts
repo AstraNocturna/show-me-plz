@@ -1,5 +1,6 @@
 import MarkdownIt from "markdown-it";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { mathPlugin } from "./math.ts";
 
 export interface RenderEnv {
   /** Session working directory, used to resolve relative image paths. */
@@ -29,6 +30,7 @@ function create(breaks: boolean) {
   const md = new MarkdownIt({ html: false, linkify: true, breaks });
   // Only links with an explicit scheme: fuzzy matching turns `README.md` into http://readme.md.
   md.linkify.set({ fuzzyLink: false });
+  md.use(mathPlugin);
   const esc = md.utils.escapeHtml;
 
   md.renderer.rules.fence = (tokens, idx) => {
@@ -36,6 +38,7 @@ function create(breaks: boolean) {
     const lang = t.info.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? "";
     return (
       `<div class="code-block"><div class="code-head"><span>${esc(lang || "text")}</span>` +
+      `${lang === "mermaid" ? `<button class="copy-btn" data-toggle-diagram>源码</button>` : ""}` +
       `<button class="copy-btn" data-copy-code>复制</button></div>` +
       `<pre><code data-lang="${esc(lang)}">${esc(t.content)}</code></pre></div>`
     );

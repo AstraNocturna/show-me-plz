@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import { linkifyFileRefs } from "../files/links";
+import { renderDiagram, renderMath } from "../render/extras";
 import { highlight } from "../render/highlight";
 import { renderMarkdown } from "../render/markdown";
 
@@ -19,14 +20,21 @@ export const Markdown = memo(function Markdown({ source, cwd, user }: Props) {
     if (!root) return;
     let cancelled = false;
     void linkifyFileRefs(root, cwd);
+    void renderMath(root, () => cancelled);
     root.querySelectorAll<HTMLElement>("code[data-lang]").forEach((code) => {
       const lang = code.dataset.lang;
       const pre = code.parentElement;
       if (!lang || !pre) return;
-      void highlight(code.textContent ?? "", lang).then((out) => {
-        if (!out || cancelled || !pre.isConnected) return;
-        pre.outerHTML = out;
-      });
+      const upgrade = () =>
+        void highlight(code.textContent ?? "", lang).then((out) => {
+          if (!out || cancelled || !pre.isConnected) return;
+          pre.outerHTML = out;
+        });
+      const block = pre.closest<HTMLElement>(".code-block");
+      if (lang === "mermaid" && block) {
+        // The source is highlighted only when the diagram cannot be drawn.
+        void renderDiagram(block, code.textContent ?? "", () => cancelled).then((ok) => ok || upgrade());
+      } else upgrade();
     });
     return () => {
       cancelled = true;

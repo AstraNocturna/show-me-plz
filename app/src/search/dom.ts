@@ -2,7 +2,7 @@ import { matches } from "./search";
 
 // UI chrome that is not part of the searchable model text; skipping it keeps DOM match order
 // aligned with the per-unit ordinals computed from the model.
-const SKIP = ".card-head, .process-head, .code-head, .copy-btn, .float-actions, .tool-status, .detail-head, .mark-btn, .file-open";
+const SKIP = ".card-head, .process-head, .code-head, .copy-btn, .float-actions, .tool-status, .detail-head, .mark-btn, .file-open, .diagram";
 
 export function textRanges(root: Element, re: RegExp): Range[] {
   const ranges: Range[] = [];

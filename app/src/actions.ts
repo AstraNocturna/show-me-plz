@@ -32,6 +32,14 @@ export function handleContentClick(e: React.MouseEvent, onImage: (src: string) =
     return;
   }
 
+  const toggle = el.closest<HTMLElement>("[data-toggle-diagram]");
+  if (toggle) {
+    const block = toggle.closest(".code-block");
+    const showing = block?.classList.toggle("show-source");
+    toggle.textContent = showing ? "图" : "源码";
+    return;
+  }
+
   const copyBtn = el.closest<HTMLElement>("[data-copy-code]");
   if (copyBtn) {
     const code = copyBtn.closest(".code-block")?.querySelector("pre");
