@@ -1,4 +1,5 @@
 mod files;
+mod git;
 mod marks;
 mod qa;
 mod session;
@@ -43,6 +44,16 @@ struct Activity {
 
 type SharedActivity = Arc<Mutex<Activity>>;
 
+/// The terminal footer's data (model, thinking level, context fill), as reported by the extension.
+#[derive(Clone, Default, Serialize)]
+struct HostStatus {
+    model: Option<Value>,
+    thinking: Option<String>,
+    context: Option<Value>,
+}
+
+type SharedStatus = Arc<Mutex<HostStatus>>;
+
 /// Control messages sent by the pi extension, one JSON object per stdin line.
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -52,12 +63,18 @@ enum HostMessage {
     Focus,
     Activity { state: String, detail: Option<String> },
     /// How to start the host's own pi, used to fork the session for side questions.
-    Host { node: String, cli: String },
+    Host { node: String, cli: String, #[serde(default)] args: Vec<String>, guard: Option<String> },
+    Status { model: Option<Value>, thinking: Option<String>, context: Option<Value> },
 }
 
 #[tauri::command]
 fn get_snapshot(state: State<'_, Shared>) -> Snapshot {
     state.lock().unwrap().snapshot()
+}
+
+#[tauri::command]
+fn get_status(status: State<'_, SharedStatus>) -> HostStatus {
+    status.lock().unwrap().clone()
 }
 
 #[tauri::command]
@@ -93,7 +110,7 @@ fn spawn_poller(app: AppHandle, state: Shared) {
 }
 
 /// Reads host control messages. EOF means pi exited; the window stays open for reading.
-fn spawn_stdin_reader(app: AppHandle, state: Shared, activity: SharedActivity, qa: SharedQa) {
+fn spawn_stdin_reader(app: AppHandle, state: Shared, activity: SharedActivity, status: SharedStatus, qa: SharedQa) {
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {
             let Ok(line) = line else { break };
@@ -121,7 +138,12 @@ fn spawn_stdin_reader(app: AppHandle, state: Shared, activity: SharedActivity, q
                     *activity.lock().unwrap() = a.clone();
                     let _ = app.emit("activity", a);
                 }
-                HostMessage::Host { node, cli } => qa.lock().unwrap().set_launch(node, cli),
+                HostMessage::Host { node, cli, args, guard } => qa.lock().unwrap().set_launch(node, cli, args, guard),
+                HostMessage::Status { model, thinking, context } => {
+                    let s = HostStatus { model, thinking, context };
+                    *status.lock().unwrap() = s.clone();
+                    let _ = app.emit("host-status", s);
+                }
             }
         }
         *activity.lock().unwrap() = Activity::default();
@@ -144,6 +166,7 @@ pub fn run() {
     let state: Shared = Arc::new(Mutex::new(SessionState::default()));
     state.lock().unwrap().switch_to(initial_session_arg(), None);
     let activity: SharedActivity = Arc::default();
+    let status: SharedStatus = Arc::default();
     let qa: SharedQa = Arc::new(Mutex::new(Qa::default()));
     Qa::sweep_stale();
 
@@ -151,24 +174,28 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(state.clone())
         .manage(activity.clone())
+        .manage(status.clone())
         .manage(qa.clone())
         .setup({
             let qa = qa.clone();
             move |app| {
                 spawn_poller(app.handle().clone(), state.clone());
-                spawn_stdin_reader(app.handle().clone(), state.clone(), activity.clone(), qa.clone());
+                spawn_stdin_reader(app.handle().clone(), state.clone(), activity.clone(), status.clone(), qa.clone());
                 Ok(())
             }
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             get_activity,
+            get_status,
+            git::git_info,
             marks::load_marks,
             marks::save_marks,
             files::read_file,
             files::check_paths,
             qa::qa_start,
             qa::qa_send,
+            qa::qa_set_write,
             qa::qa_stop
         ])
         .build(tauri::generate_context!())

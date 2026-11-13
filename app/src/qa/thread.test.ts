@@ -65,9 +65,17 @@ test("provider errors, aborts, rejected prompts and dead processes end the reply
 });
 
 test("the first question carries the side-question preamble; quotes are block-quoted", () => {
-  const first = composePrompt("why?", "line 1\nline 2", true);
+  const first = composePrompt("why?", "line 1\nline 2", { first: true, write: false, changed: true });
   assert.match(first, /^【旁路问答】/);
+  assert.match(first, /只读模式/);
   assert.match(first, /> line 1\n> line 2/);
   assert.match(first, /我的问题：why\?$/);
-  assert.equal(composePrompt("and then?", undefined, false), "and then?");
+  assert.equal(composePrompt("and then?", undefined, { first: false, write: false, changed: false }), "and then?");
+});
+
+test("a change of permission is announced to the model once, on the question after the switch", () => {
+  const on = composePrompt("fix it", undefined, { first: false, write: true, changed: true });
+  assert.match(on, /允许你修改/);
+  assert.doesNotMatch(on, /^【旁路问答】/);
+  assert.match(composePrompt("ok", undefined, { first: false, write: false, changed: true }), /只读模式/);
 });

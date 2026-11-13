@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --test --disable-warning=ExperimentalWarning src/**/*.test.ts"
+    "test": "node --test --disable-warning=ExperimentalWarning src/**/*.test.ts ../extension/*.test.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

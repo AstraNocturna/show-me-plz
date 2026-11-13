@@ -144,14 +144,31 @@ export function endReply(msgs: QaMsg[], error: string): QaMsg[] {
   return [...msgs.slice(0, -1), { ...last, running: undefined, done: true, error: last.error ?? error }];
 }
 
+// The fork carries the main session's whole context, including whatever the main agent was in the middle
+// of (it has been seen to carry on with that task, or to react to its unanswered tool calls), so the
+// preamble spells out that it is a bystander.
 const PREAMBLE =
-  "【旁路问答】这是从主会话分出来的一个独立问答，用户在阅读对话记录时想问一个问题。" +
-  "只回答这个问题，不要继续或重做之前的任务，不要修改任何文件（你只有只读工具）。用中文回答。";
+  "【旁路问答】你是从主会话分出来的旁路助手，不是主 agent。用户在阅读对话记录时想问一个问题。" +
+  "主会话里未完成的任务、还没返回结果的工具调用都与你无关：不要继续或重做它们，只回答下面的问题。用中文回答。";
 
-/** The prompt sent to the forked pi: preamble on a thread's first question, quoted selection if any. */
-export function composePrompt(question: string, quote: string | undefined, first: boolean): string {
+const MODE_READ = "当前是只读模式：你只能用 read/grep/find/ls 查看，其他工具会被拦截，不要尝试修改或执行命令。";
+const MODE_WRITE =
+  "用户已允许你修改文件和执行命令：只做用户明确要求的事，不要改动主会话正在进行的工作，做完说明改了什么。";
+
+export interface PromptMode {
+  /** First question of the thread: the preamble is added. */
+  first: boolean;
+  /** Whether the subagent may modify things. */
+  write: boolean;
+  /** The permission differs from what the model was last told. */
+  changed: boolean;
+}
+
+/** The prompt sent to the forked pi: preamble and permission note when needed, quoted selection if any. */
+export function composePrompt(question: string, quote: string | undefined, mode: PromptMode): string {
   const parts: string[] = [];
-  if (first) parts.push(PREAMBLE);
+  if (mode.first) parts.push(PREAMBLE);
+  if (mode.first || mode.changed) parts.push(mode.write ? MODE_WRITE : MODE_READ);
   if (quote) parts.push("我选中的对话内容：\n" + quote.split(/\r?\n/).map((l) => "> " + l).join("\n"));
   parts.push((quote ? "我的问题：" : "") + question);
   return parts.join("\n\n");

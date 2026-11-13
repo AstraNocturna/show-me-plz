@@ -69,7 +69,26 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .tabs { display: flex; gap: 2px; padding: 6px 6px 0; border-bottom: 1px solid var(--border); }
 .tabs button { flex: 1; padding: 4px 0 6px; color: var(--muted); font-size: 12px; border-bottom: 2px solid transparent; }
 .tabs button.on { color: var(--fg); border-bottom-color: var(--accent); }
-.outline, .marks { flex: 1; overflow-y: auto; padding: 8px 6px; }
+.outline, .marks, .todos { flex: 1; overflow-y: auto; padding: 8px 6px; }
+.todo { display: flex; gap: 6px; padding: 5px 6px; border-radius: 6px; font-size: 13px; line-height: 1.4; }
+.todo:hover { background: var(--hover); }
+.todo-glyph { flex: 0 0 auto; color: var(--muted); }
+.todo.in_progress .todo-glyph { color: var(--accent); }
+.todo.in_progress .todo-subject { font-weight: 600; }
+.todo.completed .todo-subject { color: var(--muted); text-decoration: line-through; }
+.todo.completed .todo-glyph { color: var(--ok, #2da44e); }
+.todo-body { min-width: 0; overflow-wrap: anywhere; }
+.todo-sub { font-size: 11px; }
+.todo-done { margin-top: 6px; }
+.todo-done summary { cursor: pointer; padding: 4px 6px; font-size: 12px; color: var(--muted); }
+.statusbar {
+  display: flex; align-items: center; gap: 14px; flex: 0 0 auto; min-height: 24px; padding: 2px 12px;
+  border-top: 1px solid var(--border); background: var(--bg); font-size: 12px; color: var(--muted);
+  overflow: hidden; white-space: nowrap;
+}
+.statusbar .seg { flex: 0 0 auto; }
+.statusbar .seg.warn { color: var(--err); font-weight: 600; }
+.statusbar .todo-seg:hover { color: var(--fg); }
 .outline-star { color: #e3b341; flex-shrink: 0; margin-left: auto; }
 .panel-empty { padding: 20px 12px; color: var(--muted); font-size: 12px; line-height: 1.8; }
 .mark-item { padding: 6px 6px 8px; border-radius: 6px; }
@@ -304,7 +323,8 @@ body.dragging { user-select: none; }
   display: flex; align-items: center; gap: 8px; padding: 6px 10px;
   border-bottom: 1px solid var(--border); font-size: 13px; background: var(--bg);
 }
-.qa-title { font-weight: 600; }
+.qa-title { font-weight: 600; white-space: nowrap; }
+.qa-head .copy-btn { white-space: nowrap; flex: 0 0 auto; }
 .qa-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qa-log { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 24px; }
 .qa-user { margin: 12px 0 8px; padding: 8px 12px; border-radius: 10px; background: var(--user-bg); border: 1px solid var(--user-border); }
@@ -332,7 +352,22 @@ body.dragging { user-select: none; }
 .qa-send { padding: 0 14px; border-radius: 6px; background: var(--accent); color: #fff; }
 .qa-send:disabled { opacity: 0.45; cursor: default; }
 .qa-send.stop { background: var(--err); }
-.qa-hint { margin-top: 4px; font-size: 11px; }
+.qa-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.qa-foot .toggle { flex: 0 0 auto; white-space: nowrap; }
+.qa-hint { font-size: 11px; min-width: 0; }
+.toggle.danger.on { background: var(--err); }
+.qa-warn {
+  margin-bottom: 6px; padding: 4px 8px; border-radius: 6px; font-size: 12px;
+  color: var(--err); border: 1px solid var(--err);
+}
+.qa-dialog { margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--card); font-size: 13px; }
+.qa-dialog-title { font-weight: 600; }
+.qa-dialog-msg { margin-top: 4px; white-space: pre-wrap; color: var(--muted); max-height: 8em; overflow-y: auto; }
+.qa-dialog textarea {
+  width: 100%; margin-top: 6px; resize: vertical; font: inherit; font-size: 13px; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px;
+}
+.qa-dialog-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .qa-dot { display: inline-block; width: 6px; height: 6px; margin-left: 3px; border-radius: 50%; background: var(--accent); vertical-align: top; animation: pulse 1.2s ease-in-out infinite; }
 .sel-ask {
   position: fixed; z-index: 30; padding: 3px 10px; border-radius: 14px; font-size: 12px;

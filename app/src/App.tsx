@@ -4,6 +4,8 @@ import { FilePreview } from "./components/FilePreview";
 import { Markers, type MarkerSpec } from "./components/Markers";
 import { MarksPanel, sortMarks } from "./components/MarksPanel";
 import { Outline } from "./components/Outline";
+import { StatusBar } from "./components/StatusBar";
+import { TodoPanel } from "./components/TodoPanel";
 import { QaPanel } from "./components/QaPanel";
 import { SelectionAsk } from "./components/SelectionAsk";
 import { SearchBar } from "./components/SearchBar";
@@ -16,9 +18,11 @@ import { RevealContext, type Reveal } from "./reveal";
 import { findUnitEl } from "./search/dom";
 import { useSearch } from "./search/useSearch";
 import { activeBranch } from "./session/branch";
+import { footerStats, todosOf } from "./session/footer";
 import { userKey } from "./session/units";
 import { DEFAULT_VIEW, type ViewOpts } from "./session/view";
 import { isWorking, useActivity, type Activity } from "./session/useActivity";
+import { useGit, useHostStatus } from "./session/useHostStatus";
 import { useSession } from "./session/useSession";
 import { buildTurns } from "./session/viewModel";
 import { useSplit } from "./useSplit";
@@ -70,7 +74,7 @@ export default function App() {
   const session = useSession();
   const activity = useActivity();
   const [view, setView] = useState<ViewOpts>(loadView);
-  const [tab, setTab] = useState<"outline" | "marks">("outline");
+  const [tab, setTab] = useState<"outline" | "marks" | "todos">("outline");
   const [activeId, setActiveId] = useState<string>();
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
@@ -89,10 +93,13 @@ export default function App() {
   const header = useMemo(() => session.entries.find((e) => e.type === "session"), [session.entries]);
   const cwd = typeof header?.cwd === "string" ? header.cwd : undefined;
   const sessionId = typeof header?.id === "string" ? header.id : undefined;
-  const turns = useMemo(
-    () => buildTurns(activeBranch(session.entries, session.leafOverride)),
-    [session.entries, session.leafOverride],
-  );
+  const branch = useMemo(() => activeBranch(session.entries, session.leafOverride), [session.entries, session.leafOverride]);
+  const turns = useMemo(() => buildTurns(branch), [branch]);
+  const todos = useMemo(() => todosOf(branch), [branch]);
+  const stats = useMemo(() => footerStats(branch), [branch]);
+  const hostStatus = useHostStatus();
+  // Entries land when the agent finishes something: a good moment to re-read git.
+  const git = useGit(cwd, session.entries.length);
   const turnOrder = useMemo(() => new Map(turns.map((t, i) => [t.id, i])), [turns]);
 
   const revealKey = useCallback((key: string) => setReveal((r) => ({ key, nonce: (r?.nonce ?? 0) + 1 })), []);
@@ -382,11 +389,18 @@ export default function App() {
                 <button className={tab === "marks" ? "on" : ""} onClick={() => setTab("marks")}>
                   书签 · {marks.marks.length}
                 </button>
+                {todos.length > 0 && (
+                  <button className={tab === "todos" ? "on" : ""} onClick={() => setTab("todos")}>
+                    待办 · {todos.filter((t) => t.status === "completed").length}/{todos.length}
+                  </button>
+                )}
               </div>
-              {tab === "outline" ? (
-                <Outline turns={turns} activeId={activeId} marked={markedTurns} onJump={jumpToTurn} />
-              ) : (
+              {tab === "todos" && todos.length > 0 ? (
+                <TodoPanel todos={todos} />
+              ) : tab === "marks" ? (
                 <MarksPanel api={marks} sorted={sortedMarks} turnOrder={turnOrder} onJump={jumpToMark} />
+              ) : (
+                <Outline turns={turns} activeId={activeId} marked={markedTurns} onJump={jumpToTurn} />
               )}
             </aside>
             <div ref={workspace} className={`workspace ${split.dir}`}>
@@ -451,6 +465,7 @@ export default function App() {
               )}
             </div>
           </div>
+          <StatusBar status={hostStatus} stats={stats} git={git} cwd={cwd} todos={todos} onTodos={() => setTab("todos")} />
           {help && (
             <div className="help" onClick={() => setHelp(false)}>
               <div className="help-card" onClick={(e) => e.stopPropagation()}>

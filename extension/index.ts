@@ -15,14 +15,23 @@ type HostMessage =
   | { type: "session"; file: string | null; leaf: string | null }
   | { type: "leaf"; id: string | null }
   | { type: "focus" }
-  | { type: "host"; node: string; cli: string }
+  | { type: "host"; node: string; cli: string; args: string[]; guard: string }
+  | Status
   | Activity;
+
+/** What the terminal footer shows (model, thinking level, context fill), for the viewer's status bar. */
+type Status = {
+  type: "status";
+  model: { provider: string; id: string; name?: string } | null;
+  thinking: string | null;
+  context: { tokens: number | null; window: number; percent: number | null } | null;
+};
 
 /** Live agent state for the viewer's "working" indicator; entries only reach the file once complete. */
 type Activity = { type: "activity"; state: "idle" | "thinking" | "writing" | "tool"; detail?: string };
 
 // pi reloads the extension runtime on /new, /resume, /fork and /reload; keep the window across them.
-const G = globalThis as typeof globalThis & { __showMePlz?: { child?: ChildProcess; activity?: Activity } };
+const G = globalThis as typeof globalThis & { __showMePlz?: { child?: ChildProcess; activity?: Activity; status?: string } };
 const shared = (G.__showMePlz ??= {});
 
 const DETAIL_ARGS = ["command", "path", "file_path", "query", "url", "pattern"];
@@ -57,20 +66,82 @@ function send(msg: HostMessage): void {
   alive()?.stdin?.write(JSON.stringify(msg) + "\n");
 }
 
+// Launch flags that decide which tools, extensions, skills and prompt text a pi has. A fork must load the
+// same ones, or its request prefix differs and the main session's prompt cache cannot be reused.
+// Session-selecting flags (-c, --session, -p, positional messages ...) are deliberately not passed on.
+const KEEP_FLAGS_WITH_VALUE = new Set([
+  "-e", "--extension", "--skill", "--prompt-template", "--system-prompt", "--append-system-prompt",
+  "-t", "--tools", "-xt", "--exclude-tools",
+]);
+const KEEP_FLAGS = new Set([
+  "-ne", "--no-extensions", "--no-mcp", "-ns", "--no-skills", "-np", "--no-prompt-templates",
+  "-nc", "--no-context-files", "-nbt", "--no-builtin-tools", "-nt", "--no-tools",
+]);
+
+function forkArgs(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const [flag] = a.split("=", 1);
+    if (KEEP_FLAGS.has(a)) out.push(a);
+    else if (KEEP_FLAGS_WITH_VALUE.has(flag)) {
+      out.push(a);
+      if (a === flag && i + 1 < argv.length) out.push(argv[++i]);
+    }
+  }
+  return out;
+}
+
+/** Same footer data the terminal shows; sent only when it changes. */
+function sendStatus(pi: ExtensionAPI, ctx: ExtensionContext): void {
+  const m = ctx.model;
+  const u = ctx.getContextUsage();
+  const status: Status = {
+    type: "status",
+    model: m ? { provider: m.provider, id: m.id, name: m.name } : null,
+    thinking: pi.getThinkingLevel() ?? null,
+    context: m
+      ? {
+          tokens: u?.tokens ?? null,
+          window: u?.contextWindow ?? m.contextWindow ?? 0,
+          percent: u?.percent ?? null,
+        }
+      : null,
+  };
+  const key = JSON.stringify(status);
+  if (shared.status === key) return;
+  shared.status = key;
+  send(status);
+}
+
 /** The session to show, plus how to start this same pi (the viewer forks it for side questions). */
-function sendSession(ctx: ExtensionContext): void {
-  send({ type: "host", node: process.execPath, cli: process.argv[1] ?? "" });
+function sendSession(pi: ExtensionAPI, ctx: ExtensionContext): void {
+  send({
+    type: "host",
+    node: process.execPath,
+    cli: process.argv[1] ?? "",
+    args: forkArgs(process.argv.slice(2)),
+    guard: join(dirname(fileURLToPath(import.meta.url)), "qa-guard.ts"),
+  });
   send({
     type: "session",
     file: ctx.sessionManager.getSessionFile() ?? null,
     leaf: ctx.sessionManager.getLeafId() ?? null,
   });
+  shared.status = undefined; // a new viewer has not seen the last status
+  sendStatus(pi, ctx);
 }
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
-    sendSession(ctx);
+    sendSession(pi, ctx);
   });
+
+  // Footer data: model, thinking level and context fill change at these points.
+  pi.on("model_select", async (_event, ctx) => sendStatus(pi, ctx));
+  pi.on("thinking_level_select", async (_event, ctx) => sendStatus(pi, ctx));
+  pi.on("turn_end", async (_event, ctx) => sendStatus(pi, ctx));
+  pi.on("session_compact", async (_event, ctx) => sendStatus(pi, ctx));
 
   pi.on("session_tree", async (event) => {
     send({ type: "leaf", id: event.newLeafId ?? null });
@@ -97,7 +168,7 @@ export default function (pi: ExtensionAPI) {
     description: "打开/聚焦 show-me-plz 会话阅读窗口",
     handler: async (_args, ctx) => {
       if (alive()) {
-        sendSession(ctx);
+        sendSession(pi, ctx);
         send({ type: "focus" });
         return;
       }
@@ -112,7 +183,7 @@ export default function (pi: ExtensionAPI) {
       child.stdin?.on("error", () => {}); // viewer closed: ignore EPIPE
       child.unref();
       shared.child = child;
-      sendSession(ctx);
+      sendSession(pi, ctx);
       if (shared.activity) send(shared.activity);
     },
   });

@@ -1,16 +1,48 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 import { toolIcon, toolSummary } from "../session/toolSummary";
-import type { QaApi } from "../qa/useQa";
+import type { QaApi, QaDialog, QaDialogAnswer } from "../qa/useQa";
 import type { Assistant, Block, Usage } from "../qa/thread";
 
 const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 function UsageLine({ u }: { u: Usage }) {
+  const prompt = u.input + u.cacheRead + u.cacheWrite;
+  const hit = prompt > 0 ? Math.round((u.cacheRead / prompt) * 100) : 0;
   return (
     <div className="qa-usage muted">
-      输入 {fmt(u.input + u.cacheRead + u.cacheWrite)} tokens{u.cacheRead > 0 && `（缓存命中 ${fmt(u.cacheRead)}）`} · 输出 {fmt(u.output)}
+      输入 {fmt(prompt)} tokens{u.cacheRead > 0 && `（缓存命中 ${fmt(u.cacheRead)}，${hit}%）`} · 输出 {fmt(u.output)}
       {u.cost > 0 && ` · $${u.cost.toFixed(3)}`}
+    </div>
+  );
+}
+
+/** A question an extension in the subagent is blocked on, e.g. a permission prompt. */
+function DialogCard({ d, onAnswer }: { d: QaDialog; onAnswer(a: QaDialogAnswer): void }) {
+  const [text, setText] = useState(d.prefill ?? "");
+  return (
+    <div className="qa-dialog">
+      <div className="qa-dialog-title">子代理在等你回答：{d.title}</div>
+      {d.message && <div className="qa-dialog-msg">{d.message}</div>}
+      {(d.method === "input" || d.method === "editor") && (
+        <textarea rows={d.method === "editor" ? 5 : 1} value={text} onChange={(e) => setText(e.target.value)} />
+      )}
+      <div className="qa-dialog-actions">
+        {d.method === "select" &&
+          (d.options ?? []).map((o) => (
+            <button key={o} className="copy-btn" onClick={() => onAnswer({ value: o })}>{o}</button>
+          ))}
+        {d.method === "confirm" && (
+          <>
+            <button className="copy-btn" onClick={() => onAnswer({ confirmed: true })}>允许</button>
+            <button className="copy-btn" onClick={() => onAnswer({ confirmed: false })}>拒绝</button>
+          </>
+        )}
+        {(d.method === "input" || d.method === "editor") && (
+          <button className="copy-btn" onClick={() => onAnswer({ value: text })}>确定</button>
+        )}
+        <button className="copy-btn" onClick={() => onAnswer({ cancelled: true })}>取消</button>
+      </div>
     </div>
   );
 }
@@ -84,7 +116,13 @@ export function QaPanel({ qa, cwd, focusNonce, onClose, onContentClick }: Props)
     <div className="qa">
       <header className="qa-head">
         <span className="qa-title">问答</span>
-        <span className="muted qa-model">{qa.model ?? (qa.status === "starting" ? "正在启动子代理…" : "")}</span>
+        <span className="muted qa-model">{qa.model ?? (qa.status === "starting" ? "正在启动子代理（加载扩展，可能要几十秒）…" : "")}</span>
+        {qa.thinking && <span className="muted qa-model" title="思考等级">🧠 {qa.thinking}</span>}
+        {qa.context && (
+          <span className="muted qa-model" title={`子代理上下文：${qa.context.tokens} / ${qa.context.window} tokens`}>
+            🪟 {((qa.context.tokens / qa.context.window) * 100).toFixed(1)}%/{fmt(qa.context.window)}
+          </span>
+        )}
         <span className="spacer" />
         {(qa.msgs.length > 0 || exited) && (
           <button className="copy-btn" onClick={qa.reset} title="结束当前问答，下次提问重新从主会话分出（会包含主会话的最新内容）">
@@ -106,7 +144,7 @@ export function QaPanel({ qa, cwd, focusNonce, onClose, onContentClick }: Props)
           <div className="panel-empty">
             在对话里选中一段文字点「问 AI」，或点回答右上角的「问」，再输入问题。
             <br />
-            子代理继承主会话到提问时为止的全部上下文，只能读文件，不会影响主 agent。
+            子代理继承主会话到提问时为止的全部上下文，默认只能读文件，不会影响主 agent。
           </div>
         )}
         {qa.msgs.map((m, i) =>
@@ -121,6 +159,12 @@ export function QaPanel({ qa, cwd, focusNonce, onClose, onContentClick }: Props)
         )}
       </div>
       <div className="qa-compose">
+        {qa.dialogs.map((d) => (
+          <DialogCard key={d.id} d={d} onAnswer={(a) => qa.answer(d.id, a)} />
+        ))}
+        {qa.allowWrite && (
+          <div className="qa-warn">⚠ 子代理现在可以修改文件、执行命令，主会话不会知道它做了什么。</div>
+        )}
         {qa.quote && (
           <div className="qa-pending-quote">
             <span className="qa-pending-text">引用：{qa.quote}</span>
@@ -148,7 +192,21 @@ export function QaPanel({ qa, cwd, focusNonce, onClose, onContentClick }: Props)
             <button className="qa-send" onClick={submit} disabled={!input.trim() || qa.busy || exited}>发送</button>
           )}
         </div>
-        <div className="muted qa-hint">每次提问都会把主会话的完整上下文发给模型，长会话费用较高。关闭窗口即丢弃问答。</div>
+        <div className="qa-foot">
+          <button
+            className={`toggle ${qa.allowWrite ? "on danger" : ""}`}
+            onClick={() => qa.setAllowWrite(!qa.allowWrite)}
+            disabled={exited}
+            title={
+              qa.allowWrite
+                ? "点击恢复只读：之后子代理只能用 read/grep/find/ls"
+                : "默认只读。打开后子代理可以修改文件、执行命令，改动不会写回主会话"
+            }
+          >
+            ✎ 允许子代理修改{qa.allowWrite ? "：开" : ""}
+          </button>
+          <span className="muted qa-hint">与主会话共用提示缓存，通常只有新增内容计费。关闭窗口即丢弃问答。</span>
+        </div>
       </div>
     </div>
   );
