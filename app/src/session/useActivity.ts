@@ -4,13 +4,16 @@ import { listen } from "@tauri-apps/api/event";
 
 /** What the agent is doing right now, as reported by the pi extension. */
 export interface Activity {
-  state: "idle" | "thinking" | "writing" | "tool" | "";
+  state: "idle" | "thinking" | "writing" | "tool" | "waiting" | "";
   detail?: string | null;
 }
 
 const IDLE: Activity = { state: "idle" };
 
-export const isWorking = (a: Activity) => a.state === "thinking" || a.state === "writing" || a.state === "tool";
+export const isWorking = (a: Activity) =>
+  a.state === "thinking" || a.state === "writing" || a.state === "tool" || a.state === "waiting";
+/** The terminal is showing a confirmation dialog and the agent is blocked until the user answers. */
+export const isWaiting = (a: Activity) => a.state === "waiting";
 
 /** Live agent activity: entries only reach the session file once complete, this fills the gap. */
 export function useActivity(): Activity {

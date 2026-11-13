@@ -3,7 +3,7 @@
  *
  * Deliberately context-neutral: no tools, no prompt/context hooks, no session writes.
  * It only reads the session file path / leaf id and observes notification events (what the agent is
- * doing right now), and forwards them to the viewer over stdin.
+ * doing right now, and permission prompts waiting for the user), and forwards them to the viewer over stdin.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -28,10 +28,21 @@ type Status = {
 };
 
 /** Live agent state for the viewer's "working" indicator; entries only reach the file once complete. */
-type Activity = { type: "activity"; state: "idle" | "thinking" | "writing" | "tool"; detail?: string };
+type Activity = { type: "activity"; state: "idle" | "thinking" | "writing" | "tool" | "waiting"; detail?: string };
 
 // pi reloads the extension runtime on /new, /resume, /fork and /reload; keep the window across them.
-const G = globalThis as typeof globalThis & { __showMePlz?: { child?: ChildProcess; activity?: Activity; status?: string } };
+type Shared = {
+  child?: ChildProcess;
+  /** Last activity sent to the viewer. */
+  activity?: Activity;
+  /** What the agent is doing, ignoring prompts. */
+  base?: Activity;
+  /** Permission prompts the user has not answered yet: requestId -> description. */
+  pending?: Map<string, string>;
+  unsubscribe?: Array<() => void>;
+  status?: string;
+};
+const G = globalThis as typeof globalThis & { __showMePlz?: Shared };
 const shared = (G.__showMePlz ??= {});
 
 const DETAIL_ARGS = ["command", "path", "file_path", "query", "url", "pattern"];
@@ -44,11 +55,53 @@ function toolDetail(name: string, args: unknown): string {
 }
 
 /** Sends the state only when it changes: message_update fires for every streamed token. */
-function setActivity(state: Activity["state"], detail?: string): void {
+function publishActivity(): void {
+  const pending = shared.pending;
+  let next: Activity = shared.base ?? { type: "activity", state: "idle" };
+  if (pending && pending.size > 0) {
+    const first = pending.values().next().value as string;
+    next = { type: "activity", state: "waiting", detail: pending.size > 1 ? `${first}（共 ${pending.size} 项待确认）` : first };
+  }
   const prev = shared.activity;
-  if (prev && prev.state === state && prev.detail === detail) return;
-  shared.activity = { type: "activity", state, detail };
-  send(shared.activity);
+  if (prev && prev.state === next.state && prev.detail === next.detail) return;
+  shared.activity = next;
+  send(next);
+}
+
+function setActivity(state: Activity["state"], detail?: string): void {
+  shared.base = { type: "activity", state, detail };
+  if (state === "idle") shared.pending?.clear(); // nobody is waiting once the agent has settled
+  publishActivity();
+}
+
+function oneLine(s: string, max = 80): string {
+  const line = s.split(/\r?\n/, 1)[0];
+  return line.length > max ? line.slice(0, max) + "…" : line;
+}
+
+/**
+ * pi-permission-system announces the confirmation dialog on the shared event bus (documented
+ * `permissions:ui_prompt`, answered by `permissions:decision`). That is the only way to learn the terminal
+ * is waiting for the user; other extensions' dialogs are not observable.
+ */
+function watchPermissionPrompts(pi: ExtensionAPI): void {
+  shared.unsubscribe?.forEach((off) => off());
+  const pending = (shared.pending ??= new Map());
+  shared.unsubscribe = [
+    pi.events.on("permissions:ui_prompt", (raw) => {
+      const e = (raw ?? {}) as { requestId?: unknown; surface?: unknown; value?: unknown; forwarding?: unknown };
+      if (typeof e.requestId !== "string") return;
+      const what = [typeof e.surface === "string" ? e.surface : "", typeof e.value === "string" ? oneLine(e.value) : ""]
+        .filter(Boolean)
+        .join(": ");
+      pending.set(e.requestId, `${e.forwarding ? "子代理请求 " : ""}${what || "权限请求"}`);
+      publishActivity();
+    }),
+    pi.events.on("permissions:decision", (raw) => {
+      const id = (raw as { requestId?: unknown } | null)?.requestId;
+      if (typeof id === "string" && pending.delete(id)) publishActivity();
+    }),
+  ];
 }
 
 function viewerExe(): string | undefined {
@@ -133,7 +186,11 @@ function sendSession(pi: ExtensionAPI, ctx: ExtensionContext): void {
 }
 
 export default function (pi: ExtensionAPI) {
+  watchPermissionPrompts(pi);
+
   pi.on("session_start", async (_event, ctx) => {
+    shared.pending?.clear();
+    publishActivity();
     sendSession(pi, ctx);
   });
 

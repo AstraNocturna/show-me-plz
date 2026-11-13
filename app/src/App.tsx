@@ -29,7 +29,7 @@ import { activeBranch } from "./session/branch";
 import { footerStats, todosOf } from "./session/footer";
 import { userKey } from "./session/units";
 import { DEFAULT_VIEW, type ViewOpts } from "./session/view";
-import { isWorking, useActivity, type Activity } from "./session/useActivity";
+import { isWaiting, isWorking, useActivity, type Activity } from "./session/useActivity";
 import { useGit, useHostStatus } from "./session/useHostStatus";
 import { useSession } from "./session/useSession";
 import { buildTurns } from "./session/viewModel";
@@ -48,6 +48,7 @@ function loadView(): ViewOpts {
 }
 
 function activityLabel(a: Activity): string {
+  if (a.state === "waiting") return `等你在终端确认：${a.detail ?? "权限请求"}`;
   if (a.state === "tool") return a.detail ? `正在调用 ${a.detail}` : "正在准备工具调用";
   return a.state === "writing" ? "AI 正在回复" : "AI 正在思考";
 }
@@ -450,8 +451,8 @@ export default function App() {
               📌
             </button>
             <button className="toggle" title="快捷键（可选，所有功能都有按钮）" onClick={() => setHelp(!help)}>⌨</button>
-            <span className={`status ${isWorking(activity) ? "working" : ""}`}>
-              {!session.hostConnected ? "○ pi 已退出" : isWorking(activity) ? "● AI 工作中" : "● 同步中"}
+            <span className={`status ${isWaiting(activity) ? "waiting" : isWorking(activity) ? "working" : ""}`} title={isWaiting(activity) ? activityLabel(activity) : undefined}>
+              {!session.hostConnected ? "○ pi 已退出" : isWaiting(activity) ? "⏸ 等你确认" : isWorking(activity) ? "● AI 工作中" : "● 同步中"}
             </span>
           </header>
           <div className="body">
@@ -490,8 +491,8 @@ export default function App() {
                         <TurnView key={`${view.expand}:${t.id}`} turn={t} view={view} cwd={cwd} />
                       ))}
                       {isWorking(activity) && (
-                        <div className="activity" role="status">
-                          <span className="dots"><i /><i /><i /></span>
+                        <div className={`activity ${isWaiting(activity) ? "waiting" : ""}`} role="status">
+                          {isWaiting(activity) ? <span>⏸</span> : <span className="dots"><i /><i /><i /></span>}
                           <span className="activity-text">{activityLabel(activity)}</span>
                         </div>
                       )}
