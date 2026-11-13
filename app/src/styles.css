@@ -236,6 +236,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .ap-role legend { padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .ap-reset { display: block; margin: 8px auto 4px; }
 .copy-btn:disabled { opacity: 0.4; cursor: default; }
+.image-hover {
+  position: fixed; z-index: 55; max-width: 360px; max-height: 300px; padding: 4px; pointer-events: none;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+.image-hover img { display: block; max-width: 350px; max-height: 290px; border-radius: 5px; }
+.image-hover-error { padding: 8px 14px; color: var(--muted); font-size: 12px; }
 .ctx-menu {
   position: fixed; z-index: 60; min-width: 200px; max-width: 320px; padding: 4px;
   background: var(--card); border: 1px solid var(--border); border-radius: 8px;

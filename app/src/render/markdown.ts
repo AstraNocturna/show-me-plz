@@ -25,9 +25,11 @@ export function resolveImageSrc(src: string, cwd?: string): string {
   return convertFileSrc(path.replace(/\//g, "\\"));
 }
 
-function create(breaks: boolean) {
+function create(user: boolean) {
   // html: false — agent output may contain tags that must show literally, never execute.
-  const md = new MarkdownIt({ html: false, linkify: true, breaks });
+  const md = new MarkdownIt({ html: false, linkify: true, breaks: user });
+  // What people type is plain text: in a pasted Windows path like C:\proj\.git the backslash is not an escape.
+  if (user) md.disable("escape");
   // Only links with an explicit scheme: fuzzy matching turns `README.md` into http://readme.md.
   md.linkify.set({ fuzzyLink: false });
   md.use(mathPlugin);

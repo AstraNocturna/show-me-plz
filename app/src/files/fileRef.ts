@@ -53,6 +53,13 @@ export function resolvePath(path: string, base?: string): string | null {
   return (unc ? "\\\\" : "") + out.join("\\");
 }
 
+const IMAGE = /[.](png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
+
+/** Whether the file is an image the viewer can draw directly. */
+export function isImagePath(path: string): boolean {
+  return IMAGE.test(path);
+}
+
 export function dirname(path: string): string {
   const i = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
   return i > 0 ? path.slice(0, i) : path;

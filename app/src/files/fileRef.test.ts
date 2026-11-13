@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { displayPath, findRefsInText, parseFileRef, resolvePath } from "./fileRef.ts";
+import { displayPath, findRefsInText, isImagePath, parseFileRef, resolvePath } from "./fileRef.ts";
 
 test("parseFileRef reads paths with line, range and column suffixes", () => {
   assert.deepEqual(parseFileRef("src/a.ts"), { path: "src/a.ts", line: undefined, endLine: undefined });
@@ -39,4 +39,11 @@ test("findRefsInText finds path-like spans in prose, not bare words or URL tails
   assert.deepEqual(found, ["src/App.tsx:12", "D:\\p\\lib.rs", "app/src-tauri/src/marks.rs"]);
   assert.equal(findRefsInText("see example.com/a/b.js")[0]?.ref.path, "example.com/a/b.js", "existence check filters these later");
   assert.deepEqual(findRefsInText("http://h/a/b.js"), [], "URL tails are skipped");
+});
+
+test("isImagePath recognises image files regardless of case and ignores other files", () => {
+  assert.equal(isImagePath("C:/Users/me/Desktop/screenshot_2025-10-20_16-35-05.png"), true);
+  assert.equal(isImagePath("a/B.JPEG"), true);
+  assert.equal(isImagePath("notes.png.txt"), false);
+  assert.equal(isImagePath("src/png"), false);
 });

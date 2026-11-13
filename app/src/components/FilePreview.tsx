@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { copyText, handleContentClick, toast } from "../actions";
-import { dirname, displayPath, type FileRef } from "../files/fileRef";
+import { dirname, displayPath, isImagePath, type FileRef } from "../files/fileRef";
 import { highlightFile, langForFile } from "../render/highlight";
 import { Markdown } from "./Markdown";
 
@@ -18,7 +18,6 @@ interface FileContent {
 
 type Load = { state: "loading" } | { state: "error"; error: string } | { state: "ok"; file: FileContent };
 
-const IMAGE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
 const MARKDOWN = /\.(md|markdown|mdx)$/i;
 // "Open with default app" would run these instead of showing them.
 const EXECUTABLE = /\.(exe|com|bat|cmd|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|msi|msp|scr|lnk|reg|hta|cpl|jar|pif|py|pyw|sh)$/i;
@@ -88,7 +87,7 @@ export function FilePreview(props: {
   const { path, line, endLine } = target;
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [reload, setReload] = useState(0);
-  const isImage = IMAGE.test(path);
+  const isImage = isImagePath(path);
   const isMd = MARKDOWN.test(path);
   const [rendered, setRendered] = useState(true);
   // A line target only makes sense in the source view.

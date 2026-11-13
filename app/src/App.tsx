@@ -3,6 +3,7 @@ import { copyText, handleContentClick, TOAST_EVENT } from "./actions";
 import { AppearanceMenu } from "./components/AppearanceMenu";
 import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { FilePreview } from "./components/FilePreview";
+import { ImageHover } from "./components/ImageHover";
 import { Markers, type MarkerSpec } from "./components/Markers";
 import { markTitle, MarksPanel, sortMarks } from "./components/MarksPanel";
 import { Outline } from "./components/Outline";
@@ -509,6 +510,7 @@ export default function App() {
                     <button className="new-pill" onClick={scrollToBottom}>↓ 有新消息</button>
                   )}
                   <SelectionAsk root={timeline} onAsk={ask} />
+                  <ImageHover root={timeline} />
                 </div>
               </div>
               {side && <div className="divider" onPointerDown={split.startDrag} title="拖动调整分屏比例" />}
