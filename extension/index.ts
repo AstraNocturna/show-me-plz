@@ -104,10 +104,15 @@ function watchPermissionPrompts(pi: ExtensionAPI): void {
   ];
 }
 
+/** SHOW_ME_PLZ_EXE, else next to the extension folder (release zip), else the source checkout's build output. */
 function viewerExe(): string | undefined {
   if (process.env.SHOW_ME_PLZ_EXE) return process.env.SHOW_ME_PLZ_EXE;
   const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "..", "app", "src-tauri", "target", "release", "show-me-plz.exe");
+  const candidates = [
+    join(here, "..", "show-me-plz.exe"),
+    join(here, "..", "app", "src-tauri", "target", "release", "show-me-plz.exe"),
+  ];
+  return candidates.find((p) => existsSync(p)) ?? candidates[0];
 }
 
 function alive(): ChildProcess | undefined {
