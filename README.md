@@ -75,6 +75,14 @@ pi agent 的会话阅读器：在独立窗口中实时、只读地展示当前�
 
 书签只保存在 `%APPDATA%\com.astranocturna.showmeplz\marks\<sessionId>.json`，不写 pi 的任何文件。
 
+## 安装
+
+需要 Windows 10/11（WebView2 运行时，Windows 11 自带）、Node.js、pnpm 和 Rust 工具链（MSVC）。目前只支持 Windows 和 pi（pi-coding-agent）。
+
+1. 构建阅读器：`cd app && pnpm install && pnpm tauri build --no-bundle`，得到 `app/src-tauri/target/release/show-me-plz.exe`。
+2. 在 pi 的 `settings.json`（`~/.pi/agent/settings.json`）的 `extensions` 数组里加入 `extension/index.ts` 的绝对路径，重启 pi 或输入 `/reload`。
+3. 在 pi 里输入 `/viewer`，阅读窗口会打开并跟随当前会话。
+
 ## 开发
 
 ```bash
@@ -87,3 +95,7 @@ pi -e <repo>/extension/index.ts
 ```
 
 可通过环境变量 `SHOW_ME_PLZ_EXE` 指定阅读器程序路径。
+
+## 许可证
+
+[MIT](LICENSE)
